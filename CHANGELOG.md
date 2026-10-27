@@ -1,5 +1,12 @@
 # Changelog
 
+## 0.2.0.1 · 2026-10-27
+
+- Upgrade known legacy reading instructions with an archived original.
+- Preserve custom instructions and supply the current approval policy separately.
+- Refresh parent round metadata immediately when a new draft is created.
+
+
 ## 0.2.0.0 · 2026-10-27
 
 - Reduce the main page to opening a document and requesting an AI proposal.

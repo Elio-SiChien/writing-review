@@ -21,6 +21,26 @@ GUIDE = '''# AI读取说明
 没有本地权限的AI：由用户提供相应版本的JSON/Markdown文件，不能声称自动访问本地目录。
 '''
 
+LEGACY_GUIDE_HASHES={'341cc81f0fe4e1d2dd8fb5a8785f57b0720580ac869c076d175520f24488247b'}
+
+def ensure_guide(folder):
+    """Upgrade only known tool templates; preserve custom text byte-for-byte."""
+    folder=Path(folder);path=folder/'AI读取说明.md'
+    if not path.exists():atomic(path,GUIDE);return
+    raw=path.read_bytes();text=raw.decode('utf-8',errors='replace').replace('\r\n','\n')
+    if text.strip()==GUIDE.strip():return
+    digest=hashlib.sha256(text.strip().encode()).hexdigest()
+    if digest in LEGACY_GUIDE_HASHES:
+        backup=folder/'说明归档'/('AI读取说明-'+digest[:12]+'.md')
+        backup.parent.mkdir(exist_ok=True)
+        if not backup.exists():backup.write_bytes(raw)
+        atomic(path,GUIDE)
+    else:
+        # Do not overwrite a user's guidance. The copied request tells the AI to
+        # read this current policy as well, while approval remains in the chat.
+        policy=folder/'当前审批流程.md'
+        if not policy.exists():atomic(policy,GUIDE)
+
 def write_review(folder, review):
     folder=Path(folder).resolve()
     rid=review['id'];version=int(review['version'])
@@ -55,6 +75,6 @@ def write_review(folder, review):
     atomic(target/'latest.md',md)
     atomic(target/'CURRENT.json',json.dumps(manifest,ensure_ascii=False,indent=2)+'\n')
     if review.get('lineage'):atomic(target/'ROUND.json',json.dumps(review['lineage'],ensure_ascii=False,indent=2)+'\n')
-    if not (folder/'AI读取说明.md').exists():atomic(folder/'AI读取说明.md',GUIDE)
+    ensure_guide(folder)
     return {'status':'exported','directory':str(target),'json':str(target/'latest.json'),
             'markdown':str(target/'latest.md'),'version':version}

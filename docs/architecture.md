@@ -61,3 +61,8 @@ Background inference is off by default. Optional opt-in inference writes a priva
 proposal with source version and suggestions. It does not apply active preferences.
 After explicit user approval, the assistant maintains scoped canonical Obsidian notes,
 preserving manual text and conflicts. No model training or scientific fact checking occurs.
+
+Known legacy guide templates are upgraded only by matching their normalized content
+hash, with the original archived. Custom instructions are never overwritten; a
+separate current approval-policy file is supplied. The copied request includes it
+when present. Creating a round also refreshes the parent's exported ROUND metadata.

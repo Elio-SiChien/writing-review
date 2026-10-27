@@ -2,6 +2,7 @@ import copy,json,tempfile,unittest
 from pathlib import Path
 from unittest.mock import patch
 from writing_review.server import Store
+from writing_review import handoff
 
 def source():
     return {'id':'first','title':'Synthetic introduction','scope':'introduction',
@@ -50,6 +51,22 @@ class RoundTests(unittest.TestCase):
     def test_retry_creation_is_idempotent(self):
         first=self.store.create_round(request());again=self.store.create_round(request())
         self.assertEqual(first['id'],again['id']);self.assertEqual(len(self.store.list()),2)
+    def test_parent_round_metadata_updates_immediately(self):
+        child=self.store.create_round(request())
+        metadata=json.loads((self.store.review_dir/'first/ROUND.json').read_text(encoding='utf-8'))
+        self.assertEqual(metadata['nextReviewId'],child['id']);self.assertTrue(metadata['readOnly'])
+    def test_known_legacy_guide_is_archived_and_updated(self):
+        old=(Path(__file__).parent/'fixtures/legacy_guide.md').read_bytes()
+        path=self.store.review_dir/'AI读取说明.md';path.write_bytes(old)
+        handoff.ensure_guide(self.store.review_dir)
+        self.assertIn('等待用户在当前聊天明确批准',path.read_text(encoding='utf-8'))
+        backups=list((self.store.review_dir/'说明归档').glob('*.md'))
+        self.assertEqual(len(backups),1);self.assertEqual(backups[0].read_bytes(),old)
+    def test_custom_guide_is_preserved_with_current_policy(self):
+        path=self.store.review_dir/'AI读取说明.md';raw='My own reading instructions.\nKeep my additions.\n'.encode();path.write_bytes(raw)
+        handoff.ensure_guide(self.store.review_dir)
+        self.assertEqual(path.read_bytes(),raw)
+        self.assertIn('等待用户在当前聊天明确批准',(self.store.review_dir/'当前审批流程.md').read_text(encoding='utf-8'))
     def test_unresolved_anchor_is_carried_without_fabricated_location(self):
         child=self.store.create_round(request(status='carried'))
         self.assertEqual(child['comments'][0]['id'],'C1')

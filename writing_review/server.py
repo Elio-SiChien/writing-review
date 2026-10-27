@@ -147,6 +147,7 @@ class Store:
                 old=self.get(parent['lineage']['nextReviewId'])
                 approval=old.get('approval',{})
                 if old['id']==child_id and approval.get('responses')==responses and approval.get('sourceVersion')==expected and old['paragraphs']==incoming['paragraphs']:
+                    self.export(parent_id)
                     return self.export(old['id'])
                 raise RuntimeError('A new round already exists; do not replace it')
             ids={c['id'] for c in parent['comments']}
@@ -166,6 +167,7 @@ class Store:
             self.db.execute('INSERT INTO reviews VALUES(?,?,?)',(child_id,1,encoded))
             self.db.execute('INSERT INTO history VALUES(?,?,?)',(child_id,1,encoded))
             self.db.execute('INSERT INTO lineage VALUES(?,?,?,?,?)',(child_id,parent['lineage']['manuscriptId'],parent['lineage']['roundNumber']+1,parent_id,expected))
+        self.export(parent_id)
         return self.export(child_id)
 
     def export(self,rid):

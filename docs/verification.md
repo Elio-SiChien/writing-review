@@ -1,8 +1,8 @@
 # Verification
 
-Release: 0.2.0.0 · 2026-10-27
+Release: 0.2.0.1 · 2026-10-27
 
-- 28 local tests passed, including four isolated Chromium browser acceptance cases.
+- 31 local tests passed, including four isolated Chromium browser acceptance cases.
 - Two primary navigation actions, automatic project identity, newest-first ordering,
   edited-time labels, immediate file saving and proposal-first clipboard instructions checked.
 - New rounds preserve manuscript identity, project and immutable parent versions;
@@ -19,3 +19,7 @@ Release: 0.2.0.0 · 2026-10-27
 Screenshots use synthetic prose and a synthetic folder path. Composition-event checks
 do not replace manual input-method testing. Hosted CI is not enabled; the optional
 configuration remains in [ci-example.yml](ci-example.yml).
+
+Known legacy reading instructions are archived before upgrade; custom instructions
+are retained with a separate current approval policy. Parent ROUND metadata is
+refreshed when a child is created. All three cases have regression coverage.
