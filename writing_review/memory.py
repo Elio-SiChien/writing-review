@@ -74,8 +74,6 @@ def apply_suggestions(vault, suggestions, review, state):
         if existing and previous is None:
             # Adopt a pre-existing note without replacing its human-readable text.
             state.setdefault('hashes', {})[rid] = digest
-            applied.append(rid)
-            continue
         if previous and digest != previous:
             conflict = home / '候选与冲突' / (review['id']+'_'+rid+'.md')
             atomic(conflict, '# Manual edit preserved\n\n'+json.dumps(rule, ensure_ascii=False, indent=2))
@@ -84,9 +82,15 @@ def apply_suggestions(vault, suggestions, review, state):
         if existing and record == {k:v for k,v in existing.items() if not k.startswith('_')}:
             applied.append(rid)
             continue
-        detail = '# '+record['principle']+'\n\n<!-- writing-review:'+json.dumps(record, ensure_ascii=False)+' -->\n\n'
-        detail += 'Scope: `'+record['scope']+'` | Status: '+record['status']+'\n\n'
-        detail += '## Evidence\n\n'+str(rule.get('evidence', ''))+'\n\n'
+        marker='<!-- writing-review:'+json.dumps(record, ensure_ascii=False)+' -->'
+        if existing:
+            # Retain all human prose, examples and organization across later rounds.
+            detail = MARKER.sub(lambda _:marker, existing['_text'], count=1)
+            detail += '\n\n## Additional provenance: '+review['roundId']+'\n\n'
+        else:
+            detail = '# '+record['principle']+'\n\n'+marker+'\n\n'
+            detail += 'Scope: `'+record['scope']+'` | Status: '+record['status']+'\n\n'
+        detail += 'Evidence: '+str(rule.get('evidence', ''))+'\n\n'
         detail += 'Before:\n\n'+str(rule.get('before', ''))+'\n\nAfter:\n\n'+str(rule.get('after', ''))+'\n\n'
         detail += 'Sources: '+', '.join(record['sources'])+'\n'
         atomic(file, detail)

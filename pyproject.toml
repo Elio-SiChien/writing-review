@@ -4,7 +4,7 @@ build-backend = "setuptools.build_meta"
 
 [project]
 name = "writing-review"
-version = "0.1.0"
+version = "0.1.0.1"
 description = "Local-first manuscript annotation with auditable Obsidian writing memory"
 requires-python = ">=3.10"
 license = {text = "MIT"}

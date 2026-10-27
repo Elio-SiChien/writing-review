@@ -64,6 +64,21 @@ class ReviewTests(unittest.TestCase):
     def test_unknown_source_rejected(self):
         a=suggestion();a['source_ids']=['invented']
         with self.assertRaises(ValueError):memory.apply_suggestions(self.vault,[a],normalize(example()),{})
+    def test_adopted_human_note_survives_later_provenance(self):
+        review=normalize(example());state={}
+        memory.apply_suggestions(self.vault,[suggestion()],review,state)
+        rule=memory.records(self.vault)[0];file=Path(rule['_file'])
+        file.write_text(file.read_text(encoding='utf-8')+'\n## Human examples\nKeep my organization and wording.\n',encoding='utf-8')
+        # A fresh service first adopts this pre-existing human note.
+        adopted={};memory.apply_suggestions(self.vault,[suggestion()],review,adopted)
+        newer=normalize(example());newer['roundId']='round-two'
+        newer['comments'].append({'id':'C2','paragraphId':'P1','text':'The same preference in a new round.'})
+        more=suggestion();more['source_ids']=['C1','C2']
+        memory.apply_suggestions(self.vault,[more],newer,adopted)
+        updated=memory.records(self.vault)[0]
+        self.assertIn('## Human examples\nKeep my organization and wording.',updated['_text'])
+        self.assertEqual(updated['rounds'],['round-one','round-two'])
+        self.assertEqual(updated['sources'],['C1','C2'])
     def test_learning_success_status(self):
         self.store.save(example(),0)
         self.store.learn_once(force=True,extractor=lambda *args:[suggestion()])

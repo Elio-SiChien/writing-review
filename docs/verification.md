@@ -1,8 +1,8 @@
 # Initial release verification
 
-Release: 0.1.0.0 · 2026-10-27
+Release: 0.1.0.1 · 2026-10-27
 
-- 13 local tests passed, including Chromium browser acceptance.
+- 14 local tests passed, including Chromium browser acceptance.
 - Source and JSON validation, optimistic-version protection, retry persistence,
   preference scope, duplicate provenance and manual-edit protection passed.
 - Browser acceptance covered overlapping CSS highlights, refresh, editing and undo,
