@@ -10,7 +10,7 @@ flowchart LR
   F --> A
 ```
 
-The default save path never calls a model. An existing authenticated assistant reads
+The default save path never calls a model. The user's chosen assistant reads
 the files only when requested by the user. Background Codex extraction requires an
 explicit --auto-extract startup flag; old queued jobs stay inactive otherwise.
 

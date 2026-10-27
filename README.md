@@ -3,11 +3,13 @@
 **Annotate locally. Save plain files. Let your AI read them when needed.**
 
 A local review page for writers and researchers. Comments and edits save as JSON and
-readable Markdown in a fixed folder, with version history. No model, login or network
-access is needed to save or hand off a review. Writing preferences can be maintained
+readable Markdown in a fixed folder, with version history. No model, login or external
+network access is needed to save or hand off a review. Writing preferences can be maintained
 in Obsidian by the assistant you already use, when you ask it to process the files.
 
-[中文说明](README.zh-CN.md) · [Architecture](docs/architecture.md) · [Verification](docs/verification.md) · [Security](SECURITY.md) · MIT
+[中文说明](README.zh-CN.md) · [Architecture](docs/architecture.md) · [Verification](docs/verification.md) · [Security](SECURITY.md) · [MIT](LICENSE)
+
+[Contributing](CONTRIBUTING.md) · [Changelog](CHANGELOG.md) · [Sample document](examples/sample.md)
 
 ![Synthetic review example](docs/demo.png)
 
