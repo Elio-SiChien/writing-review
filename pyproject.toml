@@ -1,0 +1,20 @@
+[build-system]
+requires = ["setuptools>=68"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "writing-review"
+version = "0.1.0"
+description = "Local-first manuscript annotation with auditable Obsidian writing memory"
+requires-python = ">=3.10"
+license = {text = "MIT"}
+dependencies = []
+
+[project.scripts]
+writing-review = "writing_review.server:main"
+
+[tool.setuptools.package-data]
+writing_review = ["static/*"]
+
+[tool.setuptools.packages.find]
+include = ["writing_review*"]

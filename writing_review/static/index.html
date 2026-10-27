@@ -1,0 +1,9 @@
+<!doctype html>
+<html lang="zh-CN"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><meta name="review-token" content="__TOKEN__"><title>Writing Review · 写作复利</title><link rel="stylesheet" href="style.css"></head>
+<body><header><div><span class="eyebrow">LOCAL FIRST · WRITING MEMORY</span><h1>Writing Review <small>写作复利</small></h1></div><div id="status" role="status">正在读取本地记录</div></header>
+<nav><label class="button">导入 TXT / MD / JSON<input id="import" type="file" accept=".txt,.md,.json" hidden></label><select id="documents" aria-label="文稿"></select><button id="demo">合成示例</button><button id="export">导出批注 JSON</button><button id="recovery" hidden>导出冲突恢复副本</button><button id="offline">下载离线页</button><button id="preferences">本次写作偏好</button></nav>
+<div class="toolbar"><label>场景 <select id="scope"><option value="introduction">学术引言</option><option value="abstract">摘要</option><option value="grant">基金</option><option value="report">报告</option><option value="general">通用</option></select></label><label>项目 ID <input id="project" placeholder="可选，如 demo-study" maxlength="64"></label><span id="learning">偏好尚未沉淀</span><button id="retry">重试沉淀</button></div>
+<main><section class="manuscript"><div class="paperhead"><h2 id="title">载入或导入文稿</h2><p>选中原文后添加意见；不选文字则添加整段意见。已批注原文显示黄色。正文可直接编辑。</p></div><div id="paragraphs"></div></section><aside><h2>批注 <span id="count">0</span></h2><div id="comments"></div></aside></main>
+<dialog id="compose"><form method="dialog"><h2>添加批注</h2><blockquote id="selection"></blockquote><textarea id="comment-text" rows="6" placeholder="希望如何修改，为什么？"></textarea><div><button value="cancel">取消</button><button id="save-comment" value="default">保存批注</button></div></form></dialog>
+<dialog id="profile"><h2>适用于本次任务的已生效偏好</h2><p>候选不会自动生效。以下文本可交给其他AI，或使用命令行 --profile 读取。</p><pre id="profile-text"></pre><button id="close-profile">关闭</button></dialog>
+<script src="app.js"></script></body></html>

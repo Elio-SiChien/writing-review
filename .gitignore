@@ -1,0 +1,15 @@
+__pycache__/
+*.pyc
+*.egg-info/
+dist/
+build/
+.venv/
+data/
+config.json
+*.sqlite3*
+.env*
+*.log
+playwright-report/
+
+# Optional workflow needs GitHub workflow scope; example is in docs/.
+.github/workflows/test.yml
