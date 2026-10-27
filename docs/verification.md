@@ -19,4 +19,5 @@ a structured synthetic extractor. That test does not establish successful access
 every model or account. A compatible configured CLI model is required for live extraction.
 
 Real input-method behavior and very large manuscripts still need broader user testing.
-GitHub CI results are separate from these local results.
+No GitHub CI workflow is active in the initial release. An optional configuration is
+provided in [ci-example.yml](ci-example.yml); the local results above are not hosted CI results.

@@ -6,7 +6,9 @@ A local-first review page for writers and researchers. Highlight a passage, leav
 comment, and keep both the original and revised text. An optional local Codex worker
 turns feedback into scoped, evidence-backed Obsidian notes for the next writing task.
 
-[中文说明](README.zh-CN.md) · [Architecture](docs/architecture.md) · [Security](SECURITY.md) · MIT
+[中文说明](README.zh-CN.md) · [Architecture](docs/architecture.md) · [Security](SECURITY.md) · [MIT](LICENSE)
+
+[Contributing](CONTRIBUTING.md) · [Changelog](CHANGELOG.md) · [Release verification](docs/verification.md) · [Sample document](examples/sample.md)
 
 ![Synthetic review example](docs/demo.png)
 
@@ -46,6 +48,7 @@ already authenticated CLI with `--sandbox read-only`, `--ephemeral` and a struct
 output schema. It inherits your Codex model configuration. If that model is not
 available to your account, reviews remain saved and the job retries; set an explicitly
 chosen supported model with `--codex-model YOUR_MODEL`. There is no silent model fallback.
+Restart a running service to apply a changed vault or model setting.
 
 The local service writes the resulting notes under `写作复利/`:
 
@@ -119,5 +122,5 @@ current Chrome/Edge or another browser supporting CSS Custom Highlights.
 Built with [CSS Custom Highlights](https://developer.mozilla.org/en-US/docs/Web/API/CSS_Custom_Highlight_API)
 and [Codex non-interactive mode](https://learn.chatgpt.com/docs/non-interactive-mode).
 
-Optional GitHub Actions configuration is provided in `docs/ci-example.yml`. Copy it to
+Optional GitHub Actions configuration is provided in [docs/ci-example.yml](docs/ci-example.yml). Copy it to
 `.github/workflows/test.yml` using an account authorized to manage workflows.

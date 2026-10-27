@@ -36,7 +36,7 @@ python -X utf8 -m writing_review --vault "你的Obsidian库路径"
 既有手工笔记首次接入时保留原文，后续冲突单独记录。
 
 默认继承现有Codex模型配置。若模型不受账户支持，批注仍保存，界面显示沉淀待重试。
-可主动指定 `--codex-model 模型名`；工具不静默替换模型。
+可主动指定 `--codex-model 模型名`；工具不静默替换模型。变更库路径或模型配置后，需重启已运行的服务。
 
 **提炼时，批注、相关文稿和匹配的偏好会发送给你配置的Codex模型提供方。**
 “本地”指审阅界面和文件保存位置；模型提炼需要联网，不是离线训练。
@@ -65,4 +65,5 @@ python -X utf8 -m writing_review --profile academic introduction project:你的�
 - 不会自动改稿、核验学术事实或训练模型。暂不支持DOCX/PDF和复杂富文本。
 - 初版面向单机单用户；请勿把私人数据目录或Obsidian库加入公开仓库。
 
-测试与架构见 [English README](README.md)、[架构说明](docs/architecture.md)。
+测试与架构见 [English README](README.md)、[架构说明](docs/architecture.md)及[首版验收记录](docs/verification.md)。
+首版未启用GitHub CI；[可选配置示例](docs/ci-example.yml)需由具有workflow权限的账户放入工作流目录后启用。
