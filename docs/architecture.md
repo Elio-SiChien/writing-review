@@ -12,7 +12,11 @@ relationships from similar titles. New roots receive internal project identities
 
 ## Create a round
 
-Use the authenticated local POST `/api/rounds` only after the user approved the plan:
+Use the authenticated local POST `/api/rounds` only after the user approved the plan.
+Read the session token from `meta[name="review-token"]` on the local service root page
+and send it as `X-Review-Token`, with `Content-Type: application/json`. If an `Origin`
+header is sent, it must match the configured loopback service origin. The token changes
+when the service restarts. A request body looks like this:
 
 ```json
 {

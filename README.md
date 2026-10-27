@@ -49,8 +49,9 @@ create new drafts. Your assistant must check the approved source version again.
 
 ## Saving and recovery
 
-Clicking **保存批注** immediately writes the database and Obsidian handoff files.
-Only a completed file write displays **已保存到Obsidian**. A temporary folder failure
+Clicking **保存批注** immediately writes the database and configured handoff folder.
+A completed write displays **已保存到Obsidian** when that folder is inside the vault,
+or **已保存到本机** otherwise. A temporary folder failure
 keeps the database copy and retries locally. Unsent text and comment drafts have
 browser recovery. A newer approved round cannot silently erase a stale tab's edits.
 Open **保存位置与备份** for the folder path and a portable backup. Recovery and retry
