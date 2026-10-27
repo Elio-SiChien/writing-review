@@ -1,23 +1,18 @@
-# Initial release verification
+# Verification
 
-Release: 0.1.0.1 · 2026-10-27
+Release: 0.1.0.2 · 2026-10-27
 
-- 14 local tests passed, including Chromium browser acceptance.
-- Source and JSON validation, optimistic-version protection, retry persistence,
-  preference scope, duplicate provenance and manual-edit protection passed.
-- Browser acceptance covered overlapping CSS highlights, refresh, editing and undo,
-  composition events, malformed imports and standalone offline export.
-- A private legacy v1 fixture was checked outside this repository. Its contents and
-  screenshots are not included here. The shipped screenshot uses synthetic text.
-- A Python wheel was built successfully, including web assets.
-- The source tree was reviewed for private documents, user paths and credentials.
+- 18 local tests passed, including Chromium browser acceptance.
+- The default save path wrote readable JSON and Markdown without calling a model.
+- Versioned file pairs, CURRENT pointer, duplicate saves, existing-review backfill,
+  export failure with database preservation, and successful retry were checked.
+- Existing tests cover highlights, editing/undo, refresh, offline export, recovery
+  conflicts, source mismatch, origin checks and protection of human preference notes.
+- Optional extractor behavior is tested using structured synthetic output. Actual
+  provider compatibility is not required for the default file-based workflow.
 
-The full authenticated inference path could not be completed on the release machine:
-its configured Codex model was rejected by the account. The failure was surfaced and
-raw annotations remained saved. Successful inference-to-vault behavior was tested with
-a structured synthetic extractor. That test does not establish successful access to
-every model or account. A compatible configured CLI model is required for live extraction.
+Only synthetic content is included in the screenshot. Any displayed folder is a
+synthetic demonstration path, not a private review directory.
 
-Real input-method behavior and very large manuscripts still need broader user testing.
-No GitHub CI workflow is active in the initial release. An optional configuration is
-provided in [ci-example.yml](ci-example.yml); the local results above are not hosted CI results.
+No hosted CI workflow is enabled; see [ci-example.yml](ci-example.yml). Browser
+composition events do not replace manual testing with a real input method.

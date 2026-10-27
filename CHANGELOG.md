@@ -1,5 +1,13 @@
 # Changelog
 
+## 0.1.0.2 · 2026-10-27
+
+- Save every review as JSON and readable Markdown in a fixed folder with version history.
+- Display the folder and provide a copyable instruction for an assistant to read it.
+- Disable background model extraction by default; keep it as an explicit advanced opt-in.
+- Backfill old reviews and retry file export without losing database records.
+
+
 ## 0.1.0.1 · 2026-10-27
 
 - Preserve existing human note bodies when extending provenance in later rounds.

@@ -5,6 +5,7 @@ from urllib.parse import urlparse, parse_qs
 import argparse, hashlib, json, os, re, secrets, sqlite3, threading, time, webbrowser
 import urllib.request, urllib.error
 from . import memory
+from . import handoff
 
 STATIC = Path(__file__).parent/'static'
 MAX_BYTES = 5_000_000
@@ -43,11 +44,14 @@ def normalize(data):
                 title=str(data.get('title','Untitled review')),schemaVersion=2)
 
 class Store:
-    def __init__(self, folder, vault=None, model=None):
+    def __init__(self, folder, vault=None, model=None, review_dir=None, auto_extract=False):
         self.folder=Path(folder).resolve()
         self.folder.mkdir(parents=True,exist_ok=True)
         self.vault=Path(vault).resolve() if vault else None
         self.model=model
+        self.auto_extract=auto_extract
+        self.review_dir=Path(review_dir).resolve() if review_dir else (self.vault/'写作复利/批注收件箱' if self.vault else self.folder/'reviews')
+        self.export_status={}
         self.lock=threading.RLock()
         self.db=sqlite3.connect(self.folder/'reviews.sqlite3',check_same_thread=False)
         self.db.execute('PRAGMA journal_mode=WAL')
@@ -55,7 +59,8 @@ class Store:
         CREATE TABLE IF NOT EXISTS jobs(id TEXT PRIMARY KEY,due REAL,status TEXT,error TEXT,version INTEGER);
         CREATE TABLE IF NOT EXISTS state(key TEXT PRIMARY KEY,value TEXT);
         CREATE TABLE IF NOT EXISTS history(id TEXT,version INTEGER,body TEXT,PRIMARY KEY(id,version));''')
-        self.db.execute("UPDATE jobs SET status='pending',due=? WHERE status='running'",(time.time(),))
+        if self.auto_extract:
+            self.db.execute("UPDATE jobs SET status='pending',due=? WHERE status='running'",(time.time(),))
         self.db.commit()
 
     def get(self,rid):
@@ -64,7 +69,8 @@ class Store:
             if not row: raise KeyError(rid)
             result=json.loads(row[1]); result['version']=row[0]
             job=self.db.execute('SELECT status,error,version FROM jobs WHERE id=?',(rid,)).fetchone()
-            result['learning']={'status':job[0],'error':job[1],'version':job[2]} if job else {'status':'idle'}
+            result['learning']=({'status':job[0],'error':job[1],'version':job[2]} if job else {'status':'idle'}) if self.auto_extract else {'status':'manual'}
+            result['storage']=self.export_status.get(rid,{'status':'pending','directory':str(self.review_dir/rid)})
             return result
 
     def list(self):
@@ -73,7 +79,7 @@ class Store:
 
     def save(self,data,expected):
         data=normalize(data)
-        data.pop('version',None); data.pop('learning',None)
+        data.pop('version',None); data.pop('learning',None);data.pop('storage',None)
         encoded=json.dumps(data,ensure_ascii=False,sort_keys=True)
         with self.lock:
             row=self.db.execute('SELECT version,body FROM reviews WHERE id=?',(data['id'],)).fetchone()
@@ -82,7 +88,8 @@ class Store:
                 if old['sourceSha256']!=data['sourceSha256'] or [p['original'] for p in old['paragraphs']]!=[p['original'] for p in data['paragraphs']]:
                     raise ValueError('Source version mismatch; import as a separate document')
                 if expected!=row[0]: raise RuntimeError('Version conflict; local changes retained. Reload before saving.')
-                if encoded==row[1]: return self.get(data['id'])
+                if encoded==row[1]:
+                    return self.export(data['id'])
             elif expected not in (None,0): raise RuntimeError('Missing document version')
             version=(row[0] if row else 0)+1
             self.db.execute('INSERT OR REPLACE INTO reviews VALUES(?,?,?)',(data['id'],version,encoded))
@@ -90,13 +97,24 @@ class Store:
             if data['comments']:
                 self.db.execute('INSERT OR REPLACE INTO jobs VALUES(?,?,?,?,?)',(data['id'],time.time()+15,'pending','',version))
             self.db.commit()
-            return self.get(data['id'])
+            return self.export(data['id'])
+
+    def export(self,rid):
+        with self.lock:
+            review=self.get(rid)
+            try:self.export_status[rid]=handoff.write_review(self.review_dir,review)
+            except Exception as exc:self.export_status[rid]={'status':'retry','directory':str(self.review_dir/rid),'error':str(exc)}
+            return self.get(rid)
+
+    def export_all(self):
+        return [self.export(item['id'])['storage'] for item in self.list()]
 
     def state(self):
         row=self.db.execute("SELECT value FROM state WHERE key='memory'").fetchone()
         return json.loads(row[0]) if row else {}
 
     def learn_once(self, force=False, extractor=None):
+        if not self.auto_extract and not force:return False
         with self.lock:
             job=self.db.execute("SELECT id,version FROM jobs WHERE status IN ('pending','retry') AND due<=? ORDER BY due LIMIT 1",(time.time()+1e12 if force else time.time(),)).fetchone()
             if not job:return False
@@ -135,7 +153,8 @@ class Handler(BaseHTTPRequestHandler):
         self.send_header('X-Writing-Review','1')
         self.send_header('X-Content-Type-Options','nosniff')
         self.send_header('Content-Security-Policy',"default-src 'self'; script-src 'self'; style-src 'self' 'unsafe-inline'; connect-src 'self'; frame-ancestors 'none'; base-uri 'none'")
-        self.end_headers();self.wfile.write(raw)
+        try:self.end_headers();self.wfile.write(raw)
+        except ConnectionError:pass  # A refresh may cancel a pending polling response.
 
     def allowed(self,api=False):
         origin='http://'+self.server.address
@@ -149,6 +168,7 @@ class Handler(BaseHTTPRequestHandler):
         if not self.allowed(path.startswith('/api/')):return self.reply(403,{'error':'Local origin or token required'})
         try:
             if path=='/api/reviews':return self.reply(200,self.server.store.list())
+            if path=='/api/storage':return self.reply(200,{'directory':str(self.server.store.review_dir),'autoExtract':self.server.store.auto_extract})
             if path.startswith('/api/reviews/'):
                 return self.reply(200,self.server.store.get(path.rsplit('/',1)[1]))
             if path=='/api/profile':
@@ -172,7 +192,9 @@ class Handler(BaseHTTPRequestHandler):
             if 'application/json' not in self.headers.get('Content-Type',''):raise ValueError('JSON required')
             data=json.loads(self.rfile.read(size))
             if self.path=='/api/save':return self.reply(200,self.server.store.save(data['review'],data.get('expectedVersion')))
+            if self.path=='/api/export':return self.reply(200,self.server.store.export(data['id']))
             if self.path=='/api/retry':
+                if not self.server.store.auto_extract:raise ValueError('Automatic extraction is disabled; read the saved review files instead')
                 with self.server.store.lock:
                     self.server.store.db.execute("UPDATE jobs SET due=?,status='pending' WHERE id=? AND status='retry'",(time.time(),data['id']))
                     self.server.store.db.commit()
@@ -196,6 +218,8 @@ def main():
     parser.add_argument('--port',type=int,default=8765)
     parser.add_argument('--no-browser',action='store_true')
     parser.add_argument('--codex-model',help='Optional explicit model for extraction; otherwise inherit Codex configuration')
+    parser.add_argument('--review-dir',type=Path,help='Fixed directory for JSON/Markdown handoff; defaults to vault writing inbox or private data/reviews')
+    parser.add_argument('--auto-extract',action='store_true',help='Explicitly enable optional Codex background extraction; off by default')
     parser.add_argument('--profile',nargs='+',help='Print active scoped preferences and exit')
     args=parser.parse_args()
     config=args.data_dir/'config.json'
@@ -203,7 +227,8 @@ def main():
     vault=args.vault or saved.get('vault')
     if args.vault:saved['vault']=str(args.vault.resolve())
     if args.codex_model:saved['codex_model']=args.codex_model
-    if args.vault or args.codex_model:memory.atomic(config,json.dumps(saved,ensure_ascii=False))
+    if args.review_dir:saved['review_dir']=str(args.review_dir.resolve())
+    if args.vault or args.codex_model or args.review_dir:memory.atomic(config,json.dumps(saved,ensure_ascii=False))
     if args.profile:
         if not vault:parser.error('--vault is required the first time')
         print(memory.profile(vault,args.profile));return
@@ -217,14 +242,17 @@ def main():
             parser.error('Port is already in use by another application')
     except urllib.error.URLError:
         pass
-    store=Store(args.data_dir,vault,args.codex_model or saved.get('codex_model'))
+    store=Store(args.data_dir,vault,args.codex_model or saved.get('codex_model'),args.review_dir or saved.get('review_dir'),args.auto_extract)
+    store.export_all()
     server=make_server(store,args.port)
     stop=threading.Event()
     def worker():
-        while not stop.wait(1): store.learn_once()
+        while not stop.wait(2):
+            if any(s.get('status')=='retry' for s in store.export_status.values()):store.export_all()
+            if store.auto_extract:store.learn_once()
     thread=threading.Thread(target=worker,daemon=True);thread.start()
     url='http://'+server.address
-    print('Writing Review '+url+'\nReview files stay in '+str(store.folder),flush=True)
+    print('Writing Review '+url+'\nReview files stay in '+str(store.review_dir)+'\nAutomatic model extraction: '+str(store.auto_extract),flush=True)
     if not args.no_browser:webbrowser.open(url)
     try:server.serve_forever()
     except KeyboardInterrupt:pass

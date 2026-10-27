@@ -1,4 +1,4 @@
-import json, tempfile, threading, unittest, urllib.request, urllib.error
+import json, tempfile, threading, unittest, urllib.request, urllib.error, hashlib
 from pathlib import Path
 from writing_review.server import Store, make_server, normalize, main
 from unittest.mock import patch
@@ -40,6 +40,7 @@ class ReviewTests(unittest.TestCase):
         data=example();data['id']='../../secret'
         with self.assertRaises(ValueError):normalize(data)
     def test_failure_saved_and_retry_survives_restart(self):
+        self.store.auto_extract=True
         self.store.save(example(),0)
         def fail(*args):raise RuntimeError('Model is unavailable')
         self.store.learn_once(force=True,extractor=fail)
@@ -80,6 +81,7 @@ class ReviewTests(unittest.TestCase):
         self.assertEqual(updated['rounds'],['round-one','round-two'])
         self.assertEqual(updated['sources'],['C1','C2'])
     def test_learning_success_status(self):
+        self.store.auto_extract=True
         self.store.save(example(),0)
         self.store.learn_once(force=True,extractor=lambda *args:[suggestion()])
         self.assertEqual(self.store.get('demo')['learning']['status'],'synced')
@@ -95,6 +97,7 @@ class ReviewTests(unittest.TestCase):
             with urllib.request.urlopen(urllib.request.Request(base+'/api/reviews',headers={'X-Review-Token':server.token})) as r:self.assertEqual(json.load(r),[])
         finally:server.shutdown();server.server_close();thread.join()
     def test_repeated_launcher_does_not_reset_running_job(self):
+        self.store.auto_extract=True
         self.store.save(example(),0)
         self.store.db.execute("UPDATE jobs SET status='running'");self.store.db.commit()
         server=make_server(self.store,0);thread=threading.Thread(target=server.serve_forever,daemon=True);thread.start()
@@ -102,5 +105,47 @@ class ReviewTests(unittest.TestCase):
             with patch('sys.argv',['writing-review','--data-dir',str(self.base/'data'),'--port',str(server.server_port),'--no-browser']):main()
             self.assertEqual(self.store.get('demo')['learning']['status'],'running')
         finally:server.shutdown();server.server_close();thread.join()
+    def test_default_saves_plain_files_without_model_calls(self):
+        with patch('writing_review.memory.extract') as model:
+            saved=self.store.save(example(),0)
+            self.assertFalse(self.store.learn_once())
+            model.assert_not_called()
+        self.assertEqual(saved['learning']['status'],'manual')
+        self.assertEqual(saved['storage']['status'],'exported')
+        folder=self.store.review_dir/'demo'
+        self.assertEqual(json.loads((folder/'latest.json').read_text(encoding='utf-8'))['comments'][0]['id'],'C1')
+        self.assertIn('Start with the central argument.',(folder/'latest.md').read_text(encoding='utf-8'))
+        self.assertTrue((self.store.review_dir/'AI读取说明.md').exists())
+    def test_versioned_handoff_pointer_and_duplicate_save(self):
+        a=self.store.save(example(),0);changed=example();changed['paragraphs'][0]['current']='A clearer sentence.'
+        self.store.save(changed,a['version']);self.store.save(changed,2)
+        folder=self.store.review_dir/'demo'
+        pointer=json.loads((folder/'CURRENT.json').read_text(encoding='utf-8'))
+        self.assertEqual(pointer['version'],2)
+        for kind,path in pointer['files'].items():
+            self.assertEqual(hashlib.sha256((folder/path).read_bytes()).hexdigest(),pointer['sha256'][kind])
+        self.assertEqual(len(list((folder/'history').glob('*.json'))),2)
+        self.assertEqual(json.loads((folder/'history/v000001.json').read_text(encoding='utf-8'))['paragraphs'][0]['current'],example()['paragraphs'][0]['current'])
+    def test_export_failure_preserves_database_and_retry(self):
+        self.store.save(example(),0)
+        changed=example();changed['paragraphs'][0]['current']='Updated.'
+        real=memory.atomic
+        def fail_pointer(path,text):
+            if Path(path).name=='CURRENT.json':raise PermissionError('Vault unavailable')
+            real(path,text)
+        with patch('writing_review.handoff.atomic',side_effect=fail_pointer):
+            saved=self.store.save(changed,1)
+        self.assertEqual(saved['version'],2);self.assertEqual(saved['storage']['status'],'retry')
+        folder=self.store.review_dir/'demo'
+        self.assertEqual(json.loads((folder/'CURRENT.json').read_text(encoding='utf-8'))['version'],1)
+        self.assertEqual(self.store.export('demo')['storage']['status'],'exported')
+        self.assertEqual(json.loads((folder/'CURRENT.json').read_text(encoding='utf-8'))['version'],2)
+    def test_existing_database_can_backfill_to_configured_folder(self):
+        self.store.save(example(),0)
+        other=Store(self.base/'data',self.vault,review_dir=self.base/'fixed-inbox')
+        try:
+            self.assertEqual(other.export_all()[0]['status'],'exported')
+            self.assertTrue((self.base/'fixed-inbox/demo/latest.md').exists())
+        finally:other.db.close()
 
 if __name__=='__main__':unittest.main()

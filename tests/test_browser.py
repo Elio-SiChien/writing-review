@@ -22,6 +22,17 @@ class BrowserTests(unittest.TestCase):
                     page.evaluate('''() => {const n=document.querySelector('#e-P1').firstChild;let r=document.createRange();r.setStart(n,0);r.setEnd(n,9);getSelection().removeAllRanges();getSelection().addRange(r);}''')
                     page.locator('#p-P1 button').click();page.locator('#comment-text').fill('观点先行。');page.locator('#save-comment').click()
                     page.wait_for_timeout(800)
+                    self.assertIn(str(store.review_dir),page.locator('#handoff-path').inner_text())
+                    exported=store.get('synthetic-demo')['storage']
+                    self.assertEqual(exported['status'],'exported')
+                    self.assertEqual(len(json.loads(Path(exported['json']).read_text(encoding='utf-8'))['comments']),1)
+                    self.assertIn('不自动调用模型',page.locator('#learning').inner_text())
+                    page.context.grant_permissions(['clipboard-read','clipboard-write'])
+                    page.locator('#copy-handoff').click()
+                    page.wait_for_function("() => document.querySelector('#status').textContent.includes('已复制')")
+                    copied=page.evaluate('navigator.clipboard.readText()')
+                    self.assertIn(str(store.review_dir),copied)
+                    self.assertIn('CURRENT.json',copied)
                     self.assertEqual(page.locator('.comment').count(),1)
                     self.assertEqual(page.evaluate("CSS.highlights.get('review-comments').size"),1)
                     page.reload();page.wait_for_selector('.comment');self.assertEqual(page.locator('.comment').count(),1)
@@ -57,6 +68,8 @@ class BrowserTests(unittest.TestCase):
                     self.assertEqual(tab.evaluate("CSS.highlights.get('review-comments').size"),2)
                     self.assertFalse(errors)
                     if os.environ.get('WR_SCREENSHOT'):
+                        # Screenshots are public fixtures; show only a synthetic path.
+                        page.locator('#handoff-path').evaluate("e=>e.textContent='/demo/review-inbox （合成示例目录）'")
                         page.screenshot(path=os.environ['WR_SCREENSHOT'],full_page=True)
                     other.close();browser.close()
             finally:

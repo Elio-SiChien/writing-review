@@ -2,41 +2,34 @@
 
 ```mermaid
 flowchart LR
-  A[Editable browser review] --> B[Loopback HTTP service]
-  A --> X[JSON and standalone HTML]
-  B --> C[Private SQLite reviews and history]
-  C --> D[15 second durable job queue]
-  D --> E[Read-only authenticated Codex CLI]
-  E --> F[Structured scope and source validation]
-  F --> G[Obsidian canonical preference notes]
-  G --> H[Task-specific preference brief]
-  H --> A
+  A[Editable review and anchored comments] --> B[Loopback service]
+  B --> C[Private SQLite and history]
+  C --> D[Fixed folder: JSON and Markdown]
+  D --> E[Assistant reads files on request]
+  E --> F[Revision and scoped Obsidian preferences]
+  F --> A
 ```
 
-Browser anchors use paragraph identity, exact quote, UTF-16 offsets, snapshot and
-surrounding context. CSS Highlight ranges leave editable text nodes untouched. After
-an edit, unique exact matches or unique context matches can be relinked. Repeated or
-missing matches are flagged. No approximate match is silently accepted.
+The default save path never calls a model. An existing authenticated assistant reads
+the files only when requested by the user. Background Codex extraction requires an
+explicit --auto-extract startup flag; old queued jobs stay inactive otherwise.
 
-The service uses SQLite WAL and expected-version checks. Each changed save stores
-both the current document and an immutable version, then resets its job deadline.
-Inference runs outside the store lock. Results from an older version are discarded.
-Interrupted running jobs return to pending on service restart; failures retry after
-60 seconds. Raw review persistence does not depend on inference success.
+CSS Highlight ranges use paragraph identity, exact quote, snapshot, UTF-16 offsets
+and surrounding context. They do not wrap or replace editable nodes. Ambiguous anchors
+are flagged instead of approximately relocated.
 
-Codex runs with read-only sandboxing and an output schema. Editorial material is
-delimited as untrusted data. Only the service writes preferences. Existing preference
-records use a small JSON metadata comment inside readable Markdown. The private
-database records hashes of generated files; a changed hash becomes a conflict note.
-On first adoption, existing human-readable prose is preserved. Canonical notes, not
-an external model state, determine subsequent preference briefs.
+SQLite WAL, expected-version checks and browser recovery protect edits. The service
+commits the review first, then writes immutable versioned JSON and Markdown into the
+configured review folder. CURRENT.json is atomically updated after both files exist.
+AI consumers should use this pointer, since latest files are convenience copies.
+File export errors leave the database intact and retry locally. Startup backfills
+existing reviews. Repeating a save does not add a history version.
 
-Scopes include general, academic, introduction, abstract, grant, report and
-project:<ID>. Explicit rules may be active; inferred rules are candidates. Preference
-identity is stable from scope and principle, and source IDs/round IDs are sets.
-Known seeded rules are matched by source overlap within scope. This is provenance
-deduplication, not a claim that arbitrary paraphrases can always be semantically merged.
+Writable locations are the startup-configured data folder, review folder and the
+vault's writing-memory subtree. Browser requests cannot change them. The private
+API reports the review path, allowing the UI to copy an assistant-reading instruction.
 
-Configuration and reviews live outside source control. The server never accepts a
-write path from the browser, and no public publishing or external messaging endpoint
-exists. Model-provider network traffic is handled by the installed Codex CLI.
+Existing scoped preferences remain retrievable from canonical Markdown. Explicit
+rules apply in scope; inferences remain candidates. The optional extraction adapter
+retains source-ID/round deduplication and preserves human prose when appending provenance.
+No model training or automatic scientific fact checking is performed.

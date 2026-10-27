@@ -1,20 +1,22 @@
 # Security and privacy
 
-This tool is intended for one user on a trusted local machine. Do not expose its
-port through a reverse proxy, tunnel or public interface. Host/Origin and API-token
-checks reduce cross-origin attacks; they do not defend against malicious software
-already running as your local user.
+This is a single-user local tool. Do not expose its port publicly. The service binds
+to 127.0.0.1 and checks Host/Origin and a session token. These controls do not defend
+against malicious software already running as your user.
 
-The companion writes only to its configured private data directory and the configured
-vault's `写作复利` subtree. Keep these outside public repositories. Review JSON and
-offline HTML contain manuscript text and comments. Treat exported files as private.
-Screenshots in this repository use synthetic material only.
+By default, saving and handing off reviews performs no model calls or network inference.
+Writable locations are the configured private data directory, configured review folder,
+and the configured vault's writing-memory subtree. Keep these outside public repositories.
+JSON, Markdown and offline HTML contain manuscript text and comments; treat them as private.
+The repository screenshot uses synthetic material only.
 
-Optional extraction sends relevant writing material to the Codex provider configured
-on your machine. Check that provider's data policy before using confidential work.
-Authentication remains with the installed CLI; this project does not read or export
-your login token. Review contents are data, never shell arguments or executable code.
+Review contents are editorial data, never shell commands. Your chosen assistant is
+responsible for respecting its own permissions when reading files or revising a manuscript.
+An assistant without local access must be given the files explicitly.
 
-For a security issue, avoid including private manuscripts or credentials in a public
-issue. Use GitHub's private vulnerability reporting if enabled, or provide a minimal
-synthetic reproduction without sensitive details.
+The optional --auto-extract mode sends relevant prose, comments and matching preferences
+to your configured Codex provider. It is off by default. Authentication stays with the
+installed CLI; the tool does not read or export login tokens.
+
+For security issues, provide a synthetic reproduction without private text or credentials.
+Use GitHub private vulnerability reporting where available.
