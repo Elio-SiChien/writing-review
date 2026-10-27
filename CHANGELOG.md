@@ -1,5 +1,12 @@
 # Changelog
 
+## 0.2.0.2 · 2026-10-27
+
+- Offer only Academic writing, Grant writing and General scenes.
+- Default new manuscripts to General and map old scenes without rewriting history.
+- Preserve section-specific preference conditions and prevent cross-scene leakage.
+
+
 ## 0.2.0.1 · 2026-10-27
 
 - Upgrade known legacy reading instructions with an archived original.

@@ -19,6 +19,8 @@ class BrowserTests(unittest.TestCase):
         self.context=self.browser.new_context(accept_downloads=True);self.context.grant_permissions(['clipboard-read','clipboard-write'])
         self.page=self.context.new_page();self.errors=[];self.page.on('pageerror',lambda e:self.errors.append(str(e)))
         self.page.goto('http://'+self.server.address)
+        self.assertEqual(self.page.locator('#scope option').all_text_contents(),['学术写作','基金写作','通用'])
+        self.assertEqual(self.page.locator('#scope').input_value(),'general')
         self.page.locator('#import').set_input_files({'name':'Synthetic introduction.md','mimeType':'text/markdown','buffer':TEXT.encode()})
         self.page.wait_for_selector('#e-P1')
     def tearDown(self):
@@ -37,6 +39,12 @@ class BrowserTests(unittest.TestCase):
         p=self.page
         self.assertEqual(p.locator('nav button').all_text_contents(),['打开文稿','请AI出修改方案'])
         self.assertEqual(p.locator('#project').count(),0);self.assertEqual(p.locator('#demo').count(),0)
+        legacy={'id':'legacy-section','title':'Legacy introduction','scope':'introduction','paragraphs':[{'id':'P1','original':'Legacy academic paragraph.','current':'Legacy academic paragraph.'}],'comments':[]}
+        p.evaluate('d=>WritingReview.importData(d)',legacy)
+        self.assertEqual(p.locator('#scope').input_value(),'academic')
+        p.locator('#import').set_input_files({'name':'Another manuscript.md','mimeType':'text/markdown','buffer':TEXT.encode()})
+        p.wait_for_function("()=>document.querySelector('#scope').value==='general'")
+        self.assertEqual(self.data()['scope'],'general')
         self.comment();first=self.data()['comments'][0];rid=self.data()['id']
         exported=json.loads((self.store.review_dir/rid/'latest.json').read_text(encoding='utf-8'))
         self.assertEqual(exported['comments'][0]['text'],'观点先行。')

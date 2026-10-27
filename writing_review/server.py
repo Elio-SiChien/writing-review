@@ -6,6 +6,7 @@ import argparse, hashlib, json, os, re, secrets, sqlite3, threading, time, webbr
 import urllib.request, urllib.error
 from . import memory
 from . import handoff
+from . import scenes
 
 STATIC = Path(__file__).parent/'static'
 MAX_BYTES = 5_000_000
@@ -97,6 +98,11 @@ class Store:
             if row:
                 old=json.loads(row[1])
                 if self.lineage(data['id'])['readOnly']:raise RuntimeError('This round is archived. Your changes remain in browser recovery; use the latest round.')
+                if old.get('scope') in scenes.SCENES:
+                    data=scenes.canonical(data)
+                elif data.get('scope') in scenes.SCENES and scenes.scene(old.get('scope'))==data['scope'] and 'preferenceContext' not in data:
+                    context=scenes.constraints(old)
+                    if context:data['preferenceContext']=context
                 data['project']=old.get('project') or 'auto-'+hashlib.sha256(data['id'].encode()).hexdigest()[:16]
                 if old['sourceSha256']!=data['sourceSha256'] or [p['original'] for p in old['paragraphs']]!=[p['original'] for p in data['paragraphs']]:
                     raise ValueError('Source version mismatch; import as a separate document')
@@ -106,6 +112,7 @@ class Store:
                     return self.export(data['id'])
             elif expected not in (None,0): raise RuntimeError('Missing document version')
             else:
+                data=scenes.canonical(data)
                 data.setdefault('project','auto-'+hashlib.sha256(data['id'].encode()).hexdigest()[:16])
                 encoded=json.dumps(data,ensure_ascii=False,sort_keys=True)
             version=(row[0] if row else 0)+1
@@ -158,8 +165,11 @@ class Store:
             if incoming['comments']:raise ValueError('New comments are entered in the new round; carry source comments via responses')
             carried={r['commentId'] for r in responses if r['status']=='carried'}
             incoming.update(id=child_id,project=parent.get('project') or 'auto-'+hashlib.sha256(parent_id.encode()).hexdigest()[:16],
-                            scope=parent.get('scope','introduction'),roundId=child_id,
+                            scope=scenes.scene(parent.get('scope')),roundId=child_id,
                             approval={'sourceReviewId':parent_id,'sourceVersion':expected,'note':note,'responses':responses})
+            context=scenes.constraints(parent)
+            if context:incoming['preferenceContext']=context
+            else:incoming.pop('preferenceContext',None)
             incoming['comments']=[dict(c,carriedFrom=parent_id) for c in parent['comments'] if c['id'] in carried]
             incoming=normalize(incoming)
             for key in ['version','learning','storage','lineage']:incoming.pop(key,None)
@@ -194,7 +204,7 @@ class Store:
             self.db.execute("UPDATE jobs SET status='running',error='' WHERE id=?",(rid,));self.db.commit()
         try:
             if not self.vault or not self.vault.is_dir(): raise RuntimeError('Obsidian vault is not configured or unavailable')
-            context=memory.profile(self.vault,{'academic',str(review.get('scope','')),'project:'+str(review.get('project',''))})
+            context=memory.profile(self.vault,scenes.applicable(review))
             rules=extractor(review,context,self.folder/'worker') if extractor else memory.extract(review,context,self.folder/'worker',model=self.model)
             with self.lock:
                 latest=self.get(rid)
@@ -246,7 +256,7 @@ class Handler(BaseHTTPRequestHandler):
             if path.startswith('/api/reviews/'):
                 return self.reply(200,self.server.store.get(path.rsplit('/',1)[1]))
             if path=='/api/profile':
-                scopes=parse_qs(parsed.query).get('scope',['academic','introduction'])
+                scopes=parse_qs(parsed.query).get('scope',['general'])
                 vault=self.server.store.vault
                 return self.reply(200,{'text':memory.profile(vault,scopes) if vault else '', 'configured':bool(vault)})
             if path=='/':

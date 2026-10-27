@@ -66,3 +66,12 @@ Known legacy guide templates are upgraded only by matching their normalized cont
 hash, with the original archived. Custom instructions are never overwritten; a
 separate current approval-policy file is supplied. The copied request includes it
 when present. Creating a round also refreshes the parent's exported ROUND metadata.
+
+## Three scenes and old records
+
+The UI and new scene values are academic, grant and general. Legacy introduction and
+abstract map to academic; report maps to general. Historical saved review bodies are
+not migrated. New roots and child rounds use canonical values. A hidden preferenceContext
+retains established section constraints; it is not an extra scene or user setting.
+Academic retrieval alone does not include introduction/abstract rules. Grant retrieval
+does not implicitly include academic rules. Explicit legacy-scope retrieval still works.

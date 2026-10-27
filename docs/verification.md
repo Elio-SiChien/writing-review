@@ -1,8 +1,8 @@
 # Verification
 
-Release: 0.2.0.1 · 2026-10-27
+Release: 0.2.0.2 · 2026-10-27
 
-- 31 local tests passed, including four isolated Chromium browser acceptance cases.
+- 35 local tests passed, including four isolated Chromium browser acceptance cases.
 - Two primary navigation actions, automatic project identity, newest-first ordering,
   edited-time labels, immediate file saving and proposal-first clipboard instructions checked.
 - New rounds preserve manuscript identity, project and immutable parent versions;
@@ -23,3 +23,6 @@ configuration remains in [ci-example.yml](ci-example.yml).
 Known legacy reading instructions are archived before upgrade; custom instructions
 are retained with a separate current approval policy. Parent ROUND metadata is
 refreshed when a child is created. All three cases have regression coverage.
+
+Three-scene options and defaults, legacy imports, exact snapshot preservation, next-round
+scene inheritance and isolation of scene/section preferences have regression coverage.

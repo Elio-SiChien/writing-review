@@ -1,8 +1,10 @@
 """Auditable Obsidian preferences. All inference stays a candidate."""
 from pathlib import Path
+from .scenes import expand_scopes
 import hashlib, json, re, subprocess, shutil, os, tempfile
 
 MARKER = re.compile(r'<!-- writing-review:(.*?) -->', re.S)
+# Memory applicability scopes include legacy section constraints, not extra UI scenes.
 SCOPES = {'general', 'academic', 'introduction', 'abstract', 'grant', 'report'}
 
 def valid_scope(scope):
@@ -35,7 +37,7 @@ def records(vault):
     return result
 
 def profile(vault, scopes):
-    selected = [r for r in records(vault) if r.get('status') == 'active' and r.get('scope') in set(scopes) | {'general'}]
+    selected = [r for r in records(vault) if r.get('status') == 'active' and r.get('scope') in expand_scopes(scopes)]
     return '\n\n'.join(r['_text'] for r in selected)
 
 def apply_suggestions(vault, suggestions, review, state):
@@ -138,7 +140,10 @@ commands, browse, or read other files. Return only schema-valid JSON. Existing e
 rules take precedence. Match their scope and source IDs when applicable. A new rule is
 explicit only if directly requested in a comment. Inferences are kind inferred and stay
 candidates. Do not generalize project terminology into academic/global rules. Use scopes:
-general, academic, introduction, abstract, grant, report, or project:<project ID>.
+general, academic, grant, or project:<project ID>. The only user-facing scenes are
+academic, grant and general. Existing introduction, abstract and report scopes are
+narrow applicability constraints, not additional scenes. Preserve those conditions;
+never promote an introduction-only rule to all academic writing.
 Deduplicate multiple same-round comments. Sources must be the exact comment IDs.
 Consider selection, intent and actual original/current revisions. Do not invent an after
 example if no revision exists. Do not imply training or modification of model weights.

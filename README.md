@@ -113,3 +113,12 @@ Private data defaults to `%LOCALAPPDATA%/WritingReview` on Windows and
 files and your vault outside public repositories. This tool is for one local user,
 binds to 127.0.0.1 and validates origin and token. It does not render rich Markdown,
 import DOCX/PDF, fact-check claims, or authenticate an external chat's approval.
+
+## Writing scenes
+
+Only Academic writing, Grant writing and General are offered. New text defaults to
+General. Legacy introduction/abstract entries display Academic writing, and legacy
+reports display General. Original history is retained; section-only preferences
+remain applicability constraints, not rules for every document in the scene.
+The default handoff is revised plain text and review records, without automatic
+extra typesetting outputs.
