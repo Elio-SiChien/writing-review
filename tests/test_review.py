@@ -80,12 +80,14 @@ class ReviewTests(unittest.TestCase):
         self.assertIn('## Human examples\nKeep my organization and wording.',updated['_text'])
         self.assertEqual(updated['rounds'],['round-one','round-two'])
         self.assertEqual(updated['sources'],['C1','C2'])
-    def test_learning_success_status(self):
+    def test_opt_in_inference_only_proposes_until_user_approval(self):
         self.store.auto_extract=True
         self.store.save(example(),0)
         self.store.learn_once(force=True,extractor=lambda *args:[suggestion()])
-        self.assertEqual(self.store.get('demo')['learning']['status'],'synced')
-        self.assertIn('Start each paragraph',memory.profile(self.vault,{'academic'}))
+        self.assertEqual(self.store.get('demo')['learning']['status'],'proposal')
+        self.assertEqual(memory.profile(self.vault,{'academic'}),'')
+        proposal=json.loads((self.store.folder/'proposals/demo-v1.json').read_text(encoding='utf-8'))
+        self.assertEqual(proposal['status'],'needs_user_approval')
     def test_loopback_origin_and_token(self):
         server=make_server(self.store,0);thread=threading.Thread(target=server.serve_forever,daemon=True);thread.start()
         base='http://'+server.address

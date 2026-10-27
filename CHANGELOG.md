@@ -1,5 +1,14 @@
 # Changelog
 
+## 0.2.0.0 · 2026-10-27
+
+- Reduce the main page to opening a document and requesting an AI proposal.
+- Save comments immediately and show newest comments first.
+- Add stable manuscript identity, approved-source checks and linked review rounds.
+- Preserve historical rounds and recover unsent feedback when a new draft appears.
+- Keep optional model inference proposal-only until the user approves in chat.
+
+
 ## 0.1.0.2 · 2026-10-27
 
 - Save every review as JSON and readable Markdown in a fixed folder with version history.

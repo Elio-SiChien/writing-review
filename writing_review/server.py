@@ -59,6 +59,10 @@ class Store:
         CREATE TABLE IF NOT EXISTS jobs(id TEXT PRIMARY KEY,due REAL,status TEXT,error TEXT,version INTEGER);
         CREATE TABLE IF NOT EXISTS state(key TEXT PRIMARY KEY,value TEXT);
         CREATE TABLE IF NOT EXISTS history(id TEXT,version INTEGER,body TEXT,PRIMARY KEY(id,version));''')
+        self.db.execute('''CREATE TABLE IF NOT EXISTS lineage(review_id TEXT PRIMARY KEY,manuscript_id TEXT,
+                        round_number INTEGER,parent_id TEXT,approved_version INTEGER)''')
+        for (rid,) in self.db.execute('SELECT id FROM reviews').fetchall():
+            self.db.execute('INSERT OR IGNORE INTO lineage VALUES(?,?,?,?,?)',(rid,'m'+hashlib.sha256(rid.encode()).hexdigest()[:24],1,None,None))
         if self.auto_extract:
             self.db.execute("UPDATE jobs SET status='pending',due=? WHERE status='running'",(time.time(),))
         self.db.commit()
@@ -71,33 +75,98 @@ class Store:
             job=self.db.execute('SELECT status,error,version FROM jobs WHERE id=?',(rid,)).fetchone()
             result['learning']=({'status':job[0],'error':job[1],'version':job[2]} if job else {'status':'idle'}) if self.auto_extract else {'status':'manual'}
             result['storage']=self.export_status.get(rid,{'status':'pending','directory':str(self.review_dir/rid)})
+            result['lineage']=self.lineage(rid)
             return result
+
+    def lineage(self,rid):
+        row=self.db.execute('SELECT manuscript_id,round_number,parent_id,approved_version FROM lineage WHERE review_id=?',(rid,)).fetchone()
+        if not row:return None
+        child=self.db.execute('SELECT review_id FROM lineage WHERE parent_id=?',(rid,)).fetchone()
+        return dict(manuscriptId=row[0],roundNumber=row[1],parentReviewId=row[2],approvedVersion=row[3],nextReviewId=child[0] if child else None,readOnly=bool(child))
 
     def list(self):
         with self.lock:
-            return [{'id':rid,'version':v,'title':json.loads(b)['title']} for rid,v,b in self.db.execute('SELECT id,version,body FROM reviews ORDER BY rowid DESC')]
+            return [{'id':rid,'version':v,'title':json.loads(b)['title'],'lineage':self.lineage(rid)} for rid,v,b in self.db.execute('SELECT id,version,body FROM reviews ORDER BY rowid DESC')]
 
     def save(self,data,expected):
         data=normalize(data)
-        data.pop('version',None); data.pop('learning',None);data.pop('storage',None)
-        encoded=json.dumps(data,ensure_ascii=False,sort_keys=True)
-        with self.lock:
+        data.pop('version',None); data.pop('learning',None);data.pop('storage',None);data.pop('lineage',None)
+        with self.lock,self.db:
+            self.db.execute('BEGIN IMMEDIATE')
             row=self.db.execute('SELECT version,body FROM reviews WHERE id=?',(data['id'],)).fetchone()
             if row:
                 old=json.loads(row[1])
+                if self.lineage(data['id'])['readOnly']:raise RuntimeError('This round is archived. Your changes remain in browser recovery; use the latest round.')
+                data['project']=old.get('project') or 'auto-'+hashlib.sha256(data['id'].encode()).hexdigest()[:16]
                 if old['sourceSha256']!=data['sourceSha256'] or [p['original'] for p in old['paragraphs']]!=[p['original'] for p in data['paragraphs']]:
                     raise ValueError('Source version mismatch; import as a separate document')
                 if expected!=row[0]: raise RuntimeError('Version conflict; local changes retained. Reload before saving.')
+                encoded=json.dumps(data,ensure_ascii=False,sort_keys=True)
                 if encoded==row[1]:
                     return self.export(data['id'])
             elif expected not in (None,0): raise RuntimeError('Missing document version')
+            else:
+                data.setdefault('project','auto-'+hashlib.sha256(data['id'].encode()).hexdigest()[:16])
+                encoded=json.dumps(data,ensure_ascii=False,sort_keys=True)
             version=(row[0] if row else 0)+1
             self.db.execute('INSERT OR REPLACE INTO reviews VALUES(?,?,?)',(data['id'],version,encoded))
             self.db.execute('INSERT INTO history VALUES(?,?,?)',(data['id'],version,encoded))
+            self.db.execute('INSERT OR IGNORE INTO lineage VALUES(?,?,?,?,?)',(data['id'],'m'+hashlib.sha256(data['id'].encode()).hexdigest()[:24],1,None,None))
             if data['comments']:
                 self.db.execute('INSERT OR REPLACE INTO jobs VALUES(?,?,?,?,?)',(data['id'],time.time()+15,'pending','',version))
             self.db.commit()
             return self.export(data['id'])
+
+    def link_legacy_rounds(self,parent_id,child_id):
+        """One-time explicit local migration; not a browser endpoint or inference."""
+        with self.lock,self.db:
+            parent=self.get(parent_id);child=self.get(child_id)
+            if parent_id==child_id:raise ValueError('A round cannot be its own parent')
+            if child['lineage']['parentReviewId']==parent_id:return
+            if parent['lineage']['nextReviewId'] or child['lineage']['parentReviewId'] or child['lineage']['nextReviewId']:
+                raise ValueError('Existing lineage cannot be replaced')
+            self.db.execute('UPDATE lineage SET manuscript_id=?,round_number=?,parent_id=?,approved_version=? WHERE review_id=?',
+                            (parent['lineage']['manuscriptId'],parent['lineage']['roundNumber']+1,parent_id,parent['version'],child_id))
+
+    def create_round(self,request):
+        """Called by an assistant only after explicit approval in the user's chat.
+
+        The server verifies the source version, not the external chat's approval.
+        """
+        parent_id=request['parentReviewId'];expected=request['expectedVersion']
+        note=request.get('approvalNote','').strip()
+        if not note:raise ValueError('Record the explicit user approval before creating a round')
+        incoming=normalize(request['review'])
+        responses=request.get('responses',[])
+        with self.lock,self.db:
+            self.db.execute('BEGIN IMMEDIATE')
+            parent=self.get(parent_id)
+            if parent['version']!=expected:raise RuntimeError('Source version changed; update the proposal before applying it')
+            child_id='r'+hashlib.sha256((parent_id+'|'+incoming['sourceSha256']).encode()).hexdigest()[:24]
+            if parent['lineage']['nextReviewId']:
+                old=self.get(parent['lineage']['nextReviewId'])
+                approval=old.get('approval',{})
+                if old['id']==child_id and approval.get('responses')==responses and approval.get('sourceVersion')==expected and old['paragraphs']==incoming['paragraphs']:
+                    return self.export(old['id'])
+                raise RuntimeError('A new round already exists; do not replace it')
+            ids={c['id'] for c in parent['comments']}
+            if not isinstance(responses,list) or len(responses)!=len(ids) or {r.get('commentId') for r in responses}!=ids:
+                raise ValueError('Every source comment needs exactly one response')
+            if any(r.get('status') not in ('addressed','carried') or not str(r.get('action','')).strip() for r in responses):
+                raise ValueError('Responses need addressed/carried status and an action')
+            if incoming['comments']:raise ValueError('New comments are entered in the new round; carry source comments via responses')
+            carried={r['commentId'] for r in responses if r['status']=='carried'}
+            incoming.update(id=child_id,project=parent.get('project') or 'auto-'+hashlib.sha256(parent_id.encode()).hexdigest()[:16],
+                            scope=parent.get('scope','introduction'),roundId=child_id,
+                            approval={'sourceReviewId':parent_id,'sourceVersion':expected,'note':note,'responses':responses})
+            incoming['comments']=[dict(c,carriedFrom=parent_id) for c in parent['comments'] if c['id'] in carried]
+            incoming=normalize(incoming)
+            for key in ['version','learning','storage','lineage']:incoming.pop(key,None)
+            encoded=json.dumps(incoming,ensure_ascii=False,sort_keys=True)
+            self.db.execute('INSERT INTO reviews VALUES(?,?,?)',(child_id,1,encoded))
+            self.db.execute('INSERT INTO history VALUES(?,?,?)',(child_id,1,encoded))
+            self.db.execute('INSERT INTO lineage VALUES(?,?,?,?,?)',(child_id,parent['lineage']['manuscriptId'],parent['lineage']['roundNumber']+1,parent_id,expected))
+        return self.export(child_id)
 
     def export(self,rid):
         with self.lock:
@@ -130,12 +199,15 @@ class Store:
                 if latest['version']!=version:
                     # A newer save already queued another job. Do not apply stale suggestions.
                     return True
-                state=self.state()
-                memory.apply_suggestions(self.vault,rules,review,state)
-                snapshot=self.vault/'写作复利/批注与修订记录'/(rid+'-v'+str(version)+'.md')
-                memory.atomic(snapshot,'# Review evidence\n\n```json\n'+json.dumps(review,ensure_ascii=False,indent=2)+'\n```\n')
-                self.db.execute("INSERT OR REPLACE INTO state VALUES('memory',?)",(json.dumps(state,ensure_ascii=False),))
-                self.db.execute("UPDATE jobs SET status='synced',error='' WHERE id=? AND version=?",(rid,version))
+                allowed={c['id'] for c in review['comments']}
+                for rule in rules:
+                    if not memory.valid_scope(rule.get('scope','')) or not rule.get('source_ids') or not set(rule['source_ids'])<=allowed:
+                        raise ValueError('Proposal has invalid scope or sources')
+                # Even opt-in inference only prepares a proposal. The user's chat
+                # approval is required before an assistant applies active preferences.
+                proposal={'reviewId':rid,'sourceVersion':version,'status':'needs_user_approval','rules':rules}
+                memory.atomic(self.folder/'proposals'/(rid+'-v'+str(version)+'.json'),json.dumps(proposal,ensure_ascii=False,indent=2))
+                self.db.execute("UPDATE jobs SET status='proposal',error='' WHERE id=? AND version=?",(rid,version))
                 self.db.commit()
         except Exception as exc:
             with self.lock:
@@ -168,7 +240,7 @@ class Handler(BaseHTTPRequestHandler):
         if not self.allowed(path.startswith('/api/')):return self.reply(403,{'error':'Local origin or token required'})
         try:
             if path=='/api/reviews':return self.reply(200,self.server.store.list())
-            if path=='/api/storage':return self.reply(200,{'directory':str(self.server.store.review_dir),'autoExtract':self.server.store.auto_extract})
+            if path=='/api/storage':return self.reply(200,{'directory':str(self.server.store.review_dir),'autoExtract':self.server.store.auto_extract,'inVault':bool(self.server.store.vault and self.server.store.review_dir.is_relative_to(self.server.store.vault))})
             if path.startswith('/api/reviews/'):
                 return self.reply(200,self.server.store.get(path.rsplit('/',1)[1]))
             if path=='/api/profile':
@@ -192,6 +264,7 @@ class Handler(BaseHTTPRequestHandler):
             if 'application/json' not in self.headers.get('Content-Type',''):raise ValueError('JSON required')
             data=json.loads(self.rfile.read(size))
             if self.path=='/api/save':return self.reply(200,self.server.store.save(data['review'],data.get('expectedVersion')))
+            if self.path=='/api/rounds':return self.reply(200,self.server.store.create_round(data))
             if self.path=='/api/export':return self.reply(200,self.server.store.export(data['id']))
             if self.path=='/api/retry':
                 if not self.server.store.auto_extract:raise ValueError('Automatic extraction is disabled; read the saved review files instead')

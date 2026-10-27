@@ -1,18 +1,21 @@
 # Verification
 
-Release: 0.1.0.2 · 2026-10-27
+Release: 0.2.0.0 · 2026-10-27
 
-- 18 local tests passed, including Chromium browser acceptance.
-- The default save path wrote readable JSON and Markdown without calling a model.
-- Versioned file pairs, CURRENT pointer, duplicate saves, existing-review backfill,
-  export failure with database preservation, and successful retry were checked.
-- Existing tests cover highlights, editing/undo, refresh, offline export, recovery
-  conflicts, source mismatch, origin checks and protection of human preference notes.
-- Optional extractor behavior is tested using structured synthetic output. Actual
-  provider compatibility is not required for the default file-based workflow.
+- 28 local tests passed, including four isolated Chromium browser acceptance cases.
+- Two primary navigation actions, automatic project identity, newest-first ordering,
+  edited-time labels, immediate file saving and proposal-first clipboard instructions checked.
+- New rounds preserve manuscript identity, project and immutable parent versions;
+  stale source versions and missing approval records are rejected. Duplicate requests
+  are idempotent and unresolved comments retain their original anchors.
+- A new round automatically opens; history is read-only. A stale tab's unsent changes
+  survive approval and reload as a recovery copy. Failed file export never claims a
+  successful Obsidian save. Retrying a comment does not duplicate it.
+- Existing tests cover source checks, origin/token protection, file version pointers,
+  persistence and protection of manually maintained preference notes.
+- Optional inference only saves a proposal. The default workflow makes no model calls;
+  no provider compatibility or external chat authentication is claimed.
 
-Only synthetic content is included in the screenshot. Any displayed folder is a
-synthetic demonstration path, not a private review directory.
-
-No hosted CI workflow is enabled; see [ci-example.yml](ci-example.yml). Browser
-composition events do not replace manual testing with a real input method.
+Screenshots use synthetic prose and a synthetic folder path. Composition-event checks
+do not replace manual input-method testing. Hosted CI is not enabled; the optional
+configuration remains in [ci-example.yml](ci-example.yml).

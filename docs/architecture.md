@@ -1,35 +1,59 @@
-# Architecture
+# Architecture and round API
 
-```mermaid
-flowchart LR
-  A[Editable review and anchored comments] --> B[Loopback service]
-  B --> C[Private SQLite and history]
-  C --> D[Fixed folder: JSON and Markdown]
-  D --> E[Assistant reads files on request]
-  E --> F[Revision and scoped Obsidian preferences]
-  F --> A
+The user reviews locally, asks an assistant for a plan, approves in their existing
+chat, then the assistant revises and creates the next round. The app copies a reading
+instruction; it does not observe the chat or authenticate approval.
+
+SQLite stores reviews, immutable saved versions and a separate lineage table. Lineage
+adds a stable manuscript ID, round number, parent review and approved source version.
+Existing reviews gain metadata without rewriting their archived JSON/Markdown. Explicit
+local migration can connect known historical rounds; the tool does not infer project
+relationships from similar titles. New roots receive internal project identities.
+
+## Create a round
+
+Use the authenticated local POST `/api/rounds` only after the user approved the plan:
+
+```json
+{
+  "parentReviewId": "example-review",
+  "expectedVersion": 3,
+  "approvalNote": "User explicitly approved the proposal in the current chat.",
+  "review": {
+    "title": "Example introduction",
+    "paragraphs": [{"id":"P1","original":"Revised text.","current":"Revised text."}],
+    "comments": []
+  },
+  "responses": [{"commentId":"C1","status":"addressed","action":"Clarified the opening."}]
+}
 ```
 
-The default save path never calls a model. The user's chosen assistant reads
-the files only when requested by the user. Background Codex extraction requires an
-explicit --auto-extract startup flag; old queued jobs stay inactive otherwise.
+The request needs exactly one response per parent comment, with status `addressed` or
+`carried`. Carried comments retain their original IDs and anchors. Missing or ambiguous
+matches are flagged by the browser. The service checks the source version within a
+write transaction; stale approval returns a conflict. Repeating an identical request
+returns the same child. The parent becomes read-only and cannot receive stale saves.
+The note records the caller's assertion of approval; the assistant remains responsible
+for obtaining it from the user. No API call by itself activates writing preferences.
 
-CSS Highlight ranges use paragraph identity, exact quote, snapshot, UTF-16 offsets
-and surrounding context. They do not wrap or replace editable nodes. Ambiguous anchors
-are flagged instead of approximately relocated.
+The response includes the child review and `lineage` metadata. Existing `/api/save`
+keeps expected-version protection. `/api/reviews` exposes lineage for navigation; the
+browser follows a new child only if it has no unsent changes or open draft. Stale
+browser copies remain downloadable instead of being silently discarded.
 
-SQLite WAL, expected-version checks and browser recovery protect edits. The service
-commits the review first, then writes immutable versioned JSON and Markdown into the
-configured review folder. CURRENT.json is atomically updated after both files exist.
-AI consumers should use this pointer, since latest files are convenience copies.
-File export errors leave the database intact and retry locally. Startup backfills
-existing reviews. Repeating a save does not add a history version.
+## Persistence and UI
 
-Writable locations are the startup-configured data folder, review folder and the
-vault's writing-memory subtree. Browser requests cannot change them. The private
-API reports the review path, allowing the UI to copy an assistant-reading instruction.
+Clicking Save immediately persists the database, versioned JSON/Markdown, then CURRENT.
+The pointer hashes stored bytes, including actual newline conventions. ROUND is a
+separate metadata file. The UI claims complete saving only after file export succeeds.
+File export retries do not depend on models. Browser drafts and recovery supplement
+the local files. Ordinary prose edits debounce; comment saves are immediate.
 
-Existing scoped preferences remain retrievable from canonical Markdown. Explicit
-rules apply in scope; inferences remain candidates. The optional extraction adapter
-retains source-ID/round deduplication and preserves human prose when appending provenance.
-No model training or automatic scientific fact checking is performed.
+CSS Custom Highlights leave editable nodes unchanged. Exact quotes, snapshots, offsets
+and context resolve anchors; ambiguous locations require relinking. The sidebar sorts
+a copy by creation time descending, retaining original storage order and source IDs.
+
+Background inference is off by default. Optional opt-in inference writes a private
+proposal with source version and suggestions. It does not apply active preferences.
+After explicit user approval, the assistant maintains scoped canonical Obsidian notes,
+preserving manual text and conflicts. No model training or scientific fact checking occurs.

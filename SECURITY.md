@@ -20,3 +20,7 @@ installed CLI; the tool does not read or export login tokens.
 
 For security issues, provide a synthetic reproduction without private text or credentials.
 Use GitHub private vulnerability reporting where available.
+
+External chat approval is the assistant caller's responsibility. The round API requires
+a note and an exact source version but cannot authenticate a chat transcript. Optional
+background inference prepares proposals only and does not activate preferences.
