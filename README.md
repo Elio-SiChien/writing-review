@@ -28,6 +28,10 @@ Windows users can double-click `start.cmd` after the first configuration. The br
 opens `http://127.0.0.1:8765`. Without a vault, reviews still save to a private local folder.
 To choose another handoff location, use `--review-dir "/path/to/review-inbox"`.
 
+The launcher prints the actual data and handoff directories. An existing instance is reused only when its reported settings match; otherwise the launcher explains which window needs restarting.
+
+For voice comments on Windows, focus the comment box and press **Win+H**. Windows handles online dictation; this tool saves the resulting text. A working microphone and network connection are required.
+
 ## Review in three steps
 
 1. Click **打开文稿** to open TXT, Markdown as plain text, or an existing JSON backup.

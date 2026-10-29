@@ -1,5 +1,11 @@
 # Changelog
 
+## Unreleased · 2026-10-29
+
+- Check running-service data and handoff locations before reusing an instance.
+- Report actual data paths and manuscript counts at startup, preserving active jobs on compatible relaunches.
+- Add synthetic startup regression coverage and document Windows voice typing.
+
 ## 0.2.0.2 · 2026-10-27
 
 - Offer only Academic writing, Grant writing and General scenes.

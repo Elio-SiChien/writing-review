@@ -252,7 +252,7 @@ class Handler(BaseHTTPRequestHandler):
         if not self.allowed(path.startswith('/api/')):return self.reply(403,{'error':'Local origin or token required'})
         try:
             if path=='/api/reviews':return self.reply(200,self.server.store.list())
-            if path=='/api/storage':return self.reply(200,{'directory':str(self.server.store.review_dir),'autoExtract':self.server.store.auto_extract,'inVault':bool(self.server.store.vault and self.server.store.review_dir.is_relative_to(self.server.store.vault))})
+            if path=='/api/storage':return self.reply(200,{'directory':str(self.server.store.review_dir),'dataDirectory':str(self.server.store.folder),'databasePath':str(self.server.store.folder/'reviews.sqlite3'),'processId':os.getpid(),'autoExtract':self.server.store.auto_extract,'inVault':bool(self.server.store.vault and self.server.store.review_dir.is_relative_to(self.server.store.vault))})
             if path.startswith('/api/reviews/'):
                 return self.reply(200,self.server.store.get(path.rsplit('/',1)[1]))
             if path=='/api/profile':
@@ -317,14 +317,37 @@ def main():
     if args.profile:
         if not vault:parser.error('--vault is required the first time')
         print(memory.profile(vault,args.profile));return
-    # Reopening the launcher must not reset a running job or spawn another worker.
+    # Reuse only an instance serving the requested data and handoff directories.
+    desired_data=args.data_dir.resolve()
+    desired_review=Path(args.review_dir or saved.get('review_dir') or
+                        (Path(vault)/'写作复利/批注收件箱' if vault else desired_data/'reviews')).resolve()
     try:
         with urllib.request.urlopen('http://127.0.0.1:'+str(args.port)+'/',timeout=1) as response:
-            if response.headers.get('X-Writing-Review')=='1':
-                if not args.no_browser:webbrowser.open('http://127.0.0.1:'+str(args.port))
-                print('Writing Review is already running. Restart it to apply changed settings.')
-                return
-            parser.error('Port is already in use by another application')
+            if response.headers.get('X-Writing-Review')!='1':
+                parser.error('Port is already in use by another application')
+            page=response.read().decode('utf-8')
+        match=re.search(r'name="review-token" content="([^"]+)"',page)
+        if not match:parser.error('Running review service cannot report its settings. Restart it first.')
+        request=urllib.request.Request('http://127.0.0.1:'+str(args.port)+'/api/storage',
+                                      headers={'X-Review-Token':match[1]})
+        with urllib.request.urlopen(request,timeout=2) as response:
+            active=json.load(response)
+        if not (args.review_dir or saved.get('review_dir') or vault):
+            desired_review=Path(active['directory']).resolve()
+        if (not active.get('dataDirectory') or Path(active['dataDirectory']).resolve()!=desired_data
+                or Path(active['directory']).resolve()!=desired_review
+                or (args.auto_extract and not active.get('autoExtract'))):
+            parser.error('运行实例与本次启动配置不一致，请先关闭旧启动窗口再双击start.cmd。\n'
+                         '当前保存位置：'+str(active.get('directory','未知'))+'\n'
+                         '本次保存位置：'+str(desired_review)+'\n'
+                         '当前数据目录：'+str(active.get('dataDirectory','旧实例未报告'))+'\n'
+                         '本次数据目录：'+str(desired_data))
+        print('Writing Review is already running.\nData directory: '+str(desired_data)+
+              '\nReview files stay in '+str(desired_review),flush=True)
+        if not args.no_browser:webbrowser.open('http://127.0.0.1:'+str(args.port))
+        return
+    except urllib.error.HTTPError:
+        parser.error('Running service settings could not be read. Restart its launch window first.')
     except urllib.error.URLError:
         pass
     store=Store(args.data_dir,vault,args.codex_model or saved.get('codex_model'),args.review_dir or saved.get('review_dir'),args.auto_extract)
@@ -337,7 +360,7 @@ def main():
             if store.auto_extract:store.learn_once()
     thread=threading.Thread(target=worker,daemon=True);thread.start()
     url='http://'+server.address
-    print('Writing Review '+url+'\nReview files stay in '+str(store.review_dir)+'\nAutomatic model extraction: '+str(store.auto_extract),flush=True)
+    print('Writing Review '+url+'\nData directory: '+str(store.folder)+'\nReview files stay in '+str(store.review_dir)+'\nAvailable reviews: '+str(len(store.list()))+'\nAutomatic model extraction: '+str(store.auto_extract),flush=True)
     if not args.no_browser:webbrowser.open(url)
     try:server.serve_forever()
     except KeyboardInterrupt:pass
