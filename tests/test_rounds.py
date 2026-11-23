@@ -27,8 +27,8 @@ class RoundTests(unittest.TestCase):
         self.assertEqual(len(self.store.list()),1)
         self.assertEqual(self.store.get('first')['paragraphs'],source()['paragraphs'])
     def test_new_round_stable_identity_project_and_immutable_parent(self):
-        folder=self.store.review_dir/'first'
-        before=(folder/'history/v000001.json').read_bytes()
+        folder=Path(self.parent['storage']['directory'])
+        before=json.loads((folder/'CURRENT.json').read_text(encoding='utf-8'))['review']
         child=self.store.create_round(request())
         self.assertEqual(child['project'],self.parent['project'])
         self.assertEqual(child['lineage']['manuscriptId'],self.parent['lineage']['manuscriptId'])
@@ -38,7 +38,7 @@ class RoundTests(unittest.TestCase):
         self.assertTrue(self.store.get('first')['lineage']['readOnly'])
         with self.assertRaises(RuntimeError):self.store.save(source(),1)
         self.store.export('first')
-        self.assertEqual((folder/'history/v000001.json').read_bytes(),before)
+        self.assertEqual(json.loads((folder/'CURRENT.json').read_text(encoding='utf-8'))['review'],before)
     def test_source_version_changes_require_updated_proposal(self):
         changed=source();changed['comments'][0]['text']='A new request after the proposal.'
         self.store.save(changed,1)
@@ -53,7 +53,7 @@ class RoundTests(unittest.TestCase):
         self.assertEqual(first['id'],again['id']);self.assertEqual(len(self.store.list()),2)
     def test_parent_round_metadata_updates_immediately(self):
         child=self.store.create_round(request())
-        metadata=json.loads((self.store.review_dir/'first/ROUND.json').read_text(encoding='utf-8'))
+        metadata=json.loads((Path(self.parent['storage']['directory'])/'ROUND.json').read_text(encoding='utf-8'))
         self.assertEqual(metadata['nextReviewId'],child['id']);self.assertTrue(metadata['readOnly'])
     def test_known_legacy_guide_is_archived_and_updated(self):
         old=(Path(__file__).parent/'fixtures/legacy_guide.md').read_bytes()
@@ -74,11 +74,14 @@ class RoundTests(unittest.TestCase):
         self.assertEqual(child['comments'][0]['carriedFrom'],'first')
     def test_legacy_lineage_link_does_not_rewrite_old_saved_versions(self):
         second=source();second['id']='second';second['paragraphs'][0]['original']='Different text';second['paragraphs'][0]['current']='Different text'
-        self.store.save(second,0)
-        old=(self.store.review_dir/'second/history/v000001.json').read_bytes()
+        folder=Path(self.store.save(second,0)['storage']['directory'])
+        old=json.loads((folder/'CURRENT.json').read_text(encoding='utf-8'))['review']
+        stored=self.store.db.execute("SELECT body FROM history WHERE id='second'").fetchall()
         self.store.link_legacy_rounds('first','second')
         self.store.export('second')
         self.assertEqual(self.store.get('second')['lineage']['roundNumber'],2)
-        self.assertEqual((self.store.review_dir/'second/history/v000001.json').read_bytes(),old)
+        self.assertEqual(json.loads((folder/'CURRENT.json').read_text(encoding='utf-8'))['review'],old)
+        self.assertEqual(json.loads((folder/'ROUND.json').read_text(encoding='utf-8'))['roundNumber'],2)
+        self.assertEqual(self.store.db.execute("SELECT body FROM history WHERE id='second'").fetchall(),stored)
 
 if __name__=='__main__':unittest.main()

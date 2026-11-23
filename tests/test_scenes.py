@@ -40,13 +40,14 @@ class SceneTests(unittest.TestCase):
             db.execute('INSERT INTO reviews VALUES(?,?,?)',('legacy',7,encoded));db.commit();db.close()
             store=Store(folder)
             try:
-                store.export('legacy');before=(store.review_dir/'legacy/history/v000007.json').read_bytes()
+                current=Path(store.export('legacy')['storage']['directory'])/'CURRENT.json'
+                before=json.loads(current.read_text(encoding='utf-8'))['review']
                 self.assertEqual(store.get('legacy')['scope'],'introduction')
                 child=store.create_round({'parentReviewId':'legacy','expectedVersion':7,'approvalNote':'User approved in chat.',
                     'review':{'paragraphs':[{'id':'P1','original':'Revised.','current':'Revised.'}],'comments':[]},'responses':[]})
                 self.assertEqual(child['scope'],'academic');self.assertEqual(child['preferenceContext'],['introduction'])
                 self.assertEqual(store.db.execute('SELECT body FROM reviews WHERE id=?',('legacy',)).fetchone()[0],encoded)
-                self.assertEqual((store.review_dir/'legacy/history/v000007.json').read_bytes(),before)
+                self.assertEqual(json.loads(current.read_text(encoding='utf-8'))['review'],before)
             finally:store.db.close()
 
 if __name__=='__main__':unittest.main()

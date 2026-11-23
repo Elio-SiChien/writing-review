@@ -1,5 +1,16 @@
 # Changelog
 
+## 0.5.0 · 2026-11-23
+
+- Open a PDF by dropping it anywhere on the page or picking it: the local service converts it with PyMuPDF (optional dependency) into paragraphs labelled with page numbers, reading two-column layouts in order, dropping running headers, footers, page numbers and review line numbers, and joining words hyphenated at line breaks. The original PDF is kept with the document's assets. Scanned PDFs get a clear message; a missing PyMuPDF gets an install hint.
+- Stop snapshot bloat: adding or editing a comment no longer stores a whole-document version; SQLite keeps a text version only when the body text changes or a round is created. The save protocol (expectedVersion, X-Review-Token) and `/api/rounds` are unchanged.
+- Vault export now keeps three files per document: CURRENT.json (pointer with the embedded record), ROUND.json and latest.md. No more `history/` files in the vault.
+- New export folders get readable names such as `20261119_论文2_讨论_第1轮`; existing folders keep their names and paths. Overwrite protection now refuses foreign folders, rollbacks and same-version content changes.
+- The reading guide in the vault is upgraded to describe the new layout; the previous guide is archived in `说明归档/`.
+- Cleanup keeps the final version of legacy export folders that revision notes cite and trims only their intermediate snapshots.
+- Add `tools/cleanup_redundancy.py`: a dry run by default that reports old snapshots, duplicate snapshots, legacy `latest.json` copies and orphan folders with sizes; `--execute` backs up, archives to a verified zip outside the vault, then removes.
+- Earlier v0.5 steps: desktop shortcut without a console window, `tools/push_latex.py` for pushing LaTeX sections, and figure cards.
+
 ## Unreleased · 2026-10-29
 
 - Check running-service data and handoff locations before reusing an instance.

@@ -47,9 +47,15 @@ browser copies remain downloadable instead of being silently discarded.
 
 ## Persistence and UI
 
-Clicking Save immediately persists the database, versioned JSON/Markdown, then CURRENT.
-The pointer hashes stored bytes, including actual newline conventions. ROUND is a
-separate metadata file. The UI claims complete saving only after file export succeeds.
+Clicking Save immediately persists the database, then the current Markdown, then
+CURRENT. Since v0.5 CURRENT embeds the complete saved record (`review`) and points to
+`latest.md`; the pointer hashes its stored bytes, including actual newline conventions.
+ROUND is a separate metadata file. Comment-only saves still advance the version used
+for expected-version checks but store no history snapshot; SQLite keeps a text version
+when the body text changes or a round is created. New export folders are named by date
+and title (remembered in the `state` table); folders named by review ID keep working.
+PDFs posted to the authenticated `/api/pdf` endpoint (raw body, URL-encoded
+`X-File-Name`) are converted with optional PyMuPDF into page-labelled paragraphs. The UI claims complete saving only after file export succeeds.
 File export retries do not depend on models. Browser drafts and recovery supplement
 the local files. Ordinary prose edits debounce; comment saves are immediate.
 

@@ -30,11 +30,38 @@ To choose another handoff location, use `--review-dir "/path/to/review-inbox"`.
 
 The launcher prints the actual data and handoff directories. An existing instance is reused only when its reported settings match; otherwise the launcher explains which window needs restarting.
 
+On Windows, run once to get a desktop shortcut that starts the service without a console
+window (clicking it again only opens the page; the log is `%LOCALAPPDATA%\WritingReview\server.log`):
+
+```powershell
+powershell -ExecutionPolicy Bypass -File install_shortcut.ps1 -Vault "C:\path\to\your\vault"
+```
+
+### Drop in a PDF (v0.5)
+
+Drag a PDF anywhere onto the page, or pick it with **打开文稿**. The local service turns it
+into paragraphs labelled with page numbers, reads two-column layouts in order, drops
+running headers, footers, page numbers and review line numbers, and joins words split
+by end-of-line hyphens. Dropping the same PDF again opens the existing document.
+Scanned PDFs without a text layer are rejected with a message. This feature needs
+PyMuPDF (`pip install "writing-review[pdf]"` or `pip install pymupdf`); everything else
+still has no third-party dependencies. Conversion is heuristic, so skim formulas,
+tables and footnotes before commenting.
+
+### Lean vault export (v0.5)
+
+Adding or editing a comment no longer stores a whole-document snapshot. Each document
+folder in the vault holds three files: `CURRENT.json`, `ROUND.json` and `latest.md`; text
+versions stay in the local SQLite database. To shrink a vault written by older versions,
+run `python -X utf8 tools/cleanup_redundancy.py` for a dry-run report, then add
+`--execute` after reviewing it. Execution backs up the whole folder and writes a verified
+zip outside the vault before removing anything.
+
 For voice comments on Windows, focus the comment box and press **Win+H**. Windows handles online dictation; this tool saves the resulting text. A working microphone and network connection are required.
 
 ## Review in three steps
 
-1. Click **打开文稿** to open TXT, Markdown as plain text, or an existing JSON backup.
+1. Click **打开文稿** (or drop a file) to open PDF, TXT, Markdown as plain text, or an existing JSON backup.
    Select the writing scene. Project identity is inherited or generated automatically.
 2. Select a sentence and click **添加批注**. No selection means a paragraph comment.
    Saved comments highlight the passage in yellow; the newest comment appears first.

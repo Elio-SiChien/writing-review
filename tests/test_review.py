@@ -114,20 +114,23 @@ class ReviewTests(unittest.TestCase):
             model.assert_not_called()
         self.assertEqual(saved['learning']['status'],'manual')
         self.assertEqual(saved['storage']['status'],'exported')
-        folder=self.store.review_dir/'demo'
-        self.assertEqual(json.loads((folder/'latest.json').read_text(encoding='utf-8'))['comments'][0]['id'],'C1')
+        folder=Path(saved['storage']['directory'])
+        self.assertEqual(json.loads((folder/'CURRENT.json').read_text(encoding='utf-8'))['review']['comments'][0]['id'],'C1')
         self.assertIn('Start with the central argument.',(folder/'latest.md').read_text(encoding='utf-8'))
         self.assertTrue((self.store.review_dir/'AI读取说明.md').exists())
     def test_versioned_handoff_pointer_and_duplicate_save(self):
         a=self.store.save(example(),0);changed=example();changed['paragraphs'][0]['current']='A clearer sentence.'
         self.store.save(changed,a['version']);self.store.save(changed,2)
-        folder=self.store.review_dir/'demo'
+        folder=Path(self.store.get('demo')['storage']['directory'])
         pointer=json.loads((folder/'CURRENT.json').read_text(encoding='utf-8'))
-        self.assertEqual(pointer['version'],2)
+        self.assertEqual(pointer['version'],2);self.assertEqual(pointer['documentId'],'demo')
+        self.assertEqual(pointer['review']['paragraphs'][0]['current'],'A clearer sentence.')
         for kind,path in pointer['files'].items():
             self.assertEqual(hashlib.sha256((folder/path).read_bytes()).hexdigest(),pointer['sha256'][kind])
-        self.assertEqual(len(list((folder/'history').glob('*.json'))),2)
-        self.assertEqual(json.loads((folder/'history/v000001.json').read_text(encoding='utf-8'))['paragraphs'][0]['current'],example()['paragraphs'][0]['current'])
+        # v0.5: no per-save snapshots in the vault; saved text versions stay in SQLite.
+        self.assertFalse((folder/'history').exists())
+        old=self.store.db.execute("SELECT body FROM history WHERE id='demo' AND version=1").fetchone()[0]
+        self.assertEqual(json.loads(old)['paragraphs'][0]['current'],example()['paragraphs'][0]['current'])
     def test_export_failure_preserves_database_and_retry(self):
         self.store.save(example(),0)
         changed=example();changed['paragraphs'][0]['current']='Updated.'
@@ -138,7 +141,7 @@ class ReviewTests(unittest.TestCase):
         with patch('writing_review.handoff.atomic',side_effect=fail_pointer):
             saved=self.store.save(changed,1)
         self.assertEqual(saved['version'],2);self.assertEqual(saved['storage']['status'],'retry')
-        folder=self.store.review_dir/'demo'
+        folder=Path(saved['storage']['directory'])
         self.assertEqual(json.loads((folder/'CURRENT.json').read_text(encoding='utf-8'))['version'],1)
         self.assertEqual(self.store.export('demo')['storage']['status'],'exported')
         self.assertEqual(json.loads((folder/'CURRENT.json').read_text(encoding='utf-8'))['version'],2)
@@ -146,8 +149,10 @@ class ReviewTests(unittest.TestCase):
         self.store.save(example(),0)
         other=Store(self.base/'data',self.vault,review_dir=self.base/'fixed-inbox')
         try:
-            self.assertEqual(other.export_all()[0]['status'],'exported')
-            self.assertTrue((self.base/'fixed-inbox/demo/latest.md').exists())
+            storage=other.export_all()[0]
+            self.assertEqual(storage['status'],'exported')
+            self.assertEqual(Path(storage['directory']).parent,(self.base/'fixed-inbox').resolve())
+            self.assertTrue((Path(storage['directory'])/'latest.md').exists())
         finally:other.db.close()
 
 if __name__=='__main__':unittest.main()

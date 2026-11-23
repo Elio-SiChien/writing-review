@@ -1,15 +1,17 @@
 """Loopback-only companion service with durable reviews and retryable memory jobs."""
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 from pathlib import Path
-from urllib.parse import urlparse, parse_qs
-import argparse, hashlib, json, os, re, secrets, sqlite3, threading, time, webbrowser
+from urllib.parse import urlparse, parse_qs, unquote
+import argparse, hashlib, json, os, re, secrets, sqlite3, sys, threading, time, webbrowser
 import urllib.request, urllib.error
 from . import memory
 from . import handoff
 from . import scenes
+from . import pdf_import
 
 STATIC = Path(__file__).parent/'static'
 MAX_BYTES = 5_000_000
+MAX_PDF_BYTES = 60_000_000
 
 def default_data():
     return Path(os.environ.get('LOCALAPPDATA',Path.home()/'.local/share'))/'WritingReview'
@@ -75,7 +77,7 @@ class Store:
             result=json.loads(row[1]); result['version']=row[0]
             job=self.db.execute('SELECT status,error,version FROM jobs WHERE id=?',(rid,)).fetchone()
             result['learning']=({'status':job[0],'error':job[1],'version':job[2]} if job else {'status':'idle'}) if self.auto_extract else {'status':'manual'}
-            result['storage']=self.export_status.get(rid,{'status':'pending','directory':str(self.review_dir/rid)})
+            result['storage']=self.export_status.get(rid,{'status':'pending','directory':str(self.review_dir/self.known_folder(rid))})
             result['lineage']=self.lineage(rid)
             return result
 
@@ -110,14 +112,19 @@ class Store:
                 encoded=json.dumps(data,ensure_ascii=False,sort_keys=True)
                 if encoded==row[1]:
                     return self.export(data['id'])
+                text_changed=body_text(old)!=body_text(data)
             elif expected not in (None,0): raise RuntimeError('Missing document version')
             else:
                 data=scenes.canonical(data)
                 data.setdefault('project','auto-'+hashlib.sha256(data['id'].encode()).hexdigest()[:16])
                 encoded=json.dumps(data,ensure_ascii=False,sort_keys=True)
+                text_changed=True
             version=(row[0] if row else 0)+1
             self.db.execute('INSERT OR REPLACE INTO reviews VALUES(?,?,?)',(data['id'],version,encoded))
-            self.db.execute('INSERT INTO history VALUES(?,?,?)',(data['id'],version,encoded))
+            # A saved text version is kept only when the body text changes (or a document or
+            # round is created). Adding or editing comments still bumps the version used for
+            # expectedVersion checks, but no longer stores a whole-document snapshot.
+            if text_changed:self.db.execute('INSERT INTO history VALUES(?,?,?)',(data['id'],version,encoded))
             self.db.execute('INSERT OR IGNORE INTO lineage VALUES(?,?,?,?,?)',(data['id'],'m'+hashlib.sha256(data['id'].encode()).hexdigest()[:24],1,None,None))
             if data['comments']:
                 self.db.execute('INSERT OR REPLACE INTO jobs VALUES(?,?,?,?,?)',(data['id'],time.time()+15,'pending','',version))
@@ -180,12 +187,60 @@ class Store:
         self.export(parent_id)
         return self.export(child_id)
 
+    def known_folder(self,rid):
+        row=self.db.execute('SELECT value FROM state WHERE key=?',('exportFolder:'+rid,)).fetchone()
+        return row[0] if row else rid
+
+    def export_folder(self,review):
+        """Export folder name for a review, assigned once and remembered in the state table.
+
+        Existing folders named by document ID keep their name (the AI reads CURRENT.json
+        there). New documents get a readable name such as 20261119_论文2_讨论_第1轮.
+        """
+        rid=review['id'];key='exportFolder:'+rid
+        row=self.db.execute('SELECT value FROM state WHERE key=?',(key,)).fetchone()
+        if row:return row[0]
+        # Never assign a name while the handoff folder is unreachable (vault drive offline):
+        # mkdir fails there, the export is retried, and a legacy folder is not mistaken for missing.
+        self.review_dir.mkdir(parents=True,exist_ok=True)
+        if (self.review_dir/rid).is_dir():name=rid
+        else:
+            name=handoff.find_folder(self.review_dir,rid)
+            if not name:
+                taken={v for (v,) in self.db.execute("SELECT value FROM state WHERE key LIKE 'exportFolder:%'")}
+                lineage=review.get('lineage') or {}
+                name=handoff.unique_name(self.review_dir,handoff.readable_name(review,lineage.get('roundNumber',1)),taken)
+        self.db.execute('INSERT OR REPLACE INTO state VALUES(?,?)',(key,name))
+        self.db.commit()
+        return name
+
     def export(self,rid):
         with self.lock:
             review=self.get(rid)
-            try:self.export_status[rid]=handoff.write_review(self.review_dir,review)
-            except Exception as exc:self.export_status[rid]={'status':'retry','directory':str(self.review_dir/rid),'error':str(exc)}
+            try:
+                name=self.export_folder(review)
+                self.export_status[rid]=handoff.write_review(self.review_dir,review,name)
+            except Exception as exc:self.export_status[rid]={'status':'retry','directory':str(self.review_dir/self.known_folder(rid)),'error':str(exc)}
             return self.get(rid)
+
+    def import_pdf(self,raw,filename=''):
+        """Create a review from a dropped PDF (PyMuPDF, optional). Re-dropping the same file reopens it."""
+        if not raw.startswith(b'%PDF'):raise ValueError('这不是PDF文件（文件头不是 %PDF）。')
+        digest=hashlib.sha256(raw).hexdigest();rid='pdf-'+digest[:24]
+        try:return self.get(rid)
+        except KeyError:pass
+        items=pdf_import.convert(raw)
+        name=str(filename or '').replace('\\','/').rsplit('/',1)[-1]
+        title=re.sub(r'\.pdf$','',name,flags=re.I).strip()[:120] or 'PDF文稿'
+        folder=self.folder/'assets'/rid;folder.mkdir(parents=True,exist_ok=True)
+        original=folder/'original.pdf'
+        if not original.exists():
+            tmp=folder/'original.pdf.part';tmp.write_bytes(raw);os.replace(tmp,original)
+        paragraphs=[{'id':'P'+str(i),'original':item['text'],'current':item['text'],'label':item['label'],'page':item['page']}
+                    for i,item in enumerate(items,1)]
+        review={'id':rid,'title':title,'scope':'general','assetSet':rid,'sourcePdf':str(original),
+                'sourceFile':name,'sourcePdfSha256':digest,'paragraphs':paragraphs,'comments':[]}
+        return self.save(review,0)
 
     def export_all(self):
         return [self.export(item['id'])['storage'] for item in self.list()]
@@ -226,10 +281,17 @@ class Store:
                 self.db.execute("UPDATE jobs SET status='retry',due=?,error=? WHERE id=? AND version=?",(time.time()+60,str(exc)[-800:],rid,version));self.db.commit()
         return True
 
+def body_text(review):
+    return [(p['id'],p['original'],p['current']) for p in review['paragraphs']]
+
 class Handler(BaseHTTPRequestHandler):
     def log_message(self,*args): pass
     def reply(self,code,data,kind='application/json; charset=utf-8'):
         raw=data.encode() if isinstance(data,str) else json.dumps(data,ensure_ascii=False).encode()
+        if code>=400:
+            # Keep failed requests in the log (server.log when started from the desktop icon).
+            try:print(time.strftime('%H:%M:%S'),self.command,self.path,code,(raw[:300].decode('utf-8','replace')),file=sys.stderr,flush=True)
+            except Exception:pass
         self.send_response(code)
         self.send_header('Content-Type',kind)
         self.send_header('Content-Length',str(len(raw)))
@@ -246,6 +308,25 @@ class Handler(BaseHTTPRequestHandler):
         if self.headers.get('Origin') not in (None,origin):return False
         if self.headers.get('Sec-Fetch-Site')=='cross-site':return False
         return not api or secrets.compare_digest(self.headers.get('X-Review-Token',''),self.server.token)
+
+    def asset(self,path):
+        """Read-only figure images for figure cards: <data dir>/assets/<set>/<file>.png|jpg.
+
+        Same-origin page requests only (checked in allowed()); names are validated so the
+        path cannot leave the assets folder.
+        """
+        match=re.fullmatch(r'/asset/([A-Za-z0-9_-]{1,80})/([A-Za-z0-9_.-]{1,120}\.(png|jpe?g))',path)
+        if not match:return self.reply(404,{'error':'Not found'})
+        file=self.server.store.folder/'assets'/match[1]/match[2]
+        if not file.is_file():return self.reply(404,{'error':'Not found'})
+        raw=file.read_bytes()
+        self.send_response(200)
+        self.send_header('Content-Type','image/png' if match[3]=='png' else 'image/jpeg')
+        self.send_header('Content-Length',str(len(raw)))
+        self.send_header('Cache-Control','no-store')
+        self.send_header('X-Content-Type-Options','nosniff')
+        try:self.end_headers();self.wfile.write(raw)
+        except ConnectionError:pass
 
     def do_GET(self):
         parsed=urlparse(self.path);path=parsed.path
@@ -264,12 +345,15 @@ class Handler(BaseHTTPRequestHandler):
                 return self.reply(200,text,'text/html; charset=utf-8')
             if path in ('/app.js','/style.css'):
                 return self.reply(200,(STATIC/path[1:]).read_text(encoding='utf-8'),'text/javascript; charset=utf-8' if path.endswith('.js') else 'text/css; charset=utf-8')
+            if path.startswith('/asset/'):
+                return self.asset(path)
             self.reply(404,{'error':'Not found'})
         except KeyError:self.reply(404,{'error':'Review not found'})
         except Exception:self.reply(500,{'error':'Unable to read local data'})
 
     def do_POST(self):
         if not self.allowed(True):return self.reply(403,{'error':'Local origin or token required'})
+        if self.path=='/api/pdf':return self.upload_pdf()
         try:
             size=int(self.headers.get('Content-Length','0'))
             if size<=0 or size>MAX_BYTES:raise ValueError('Request too large or empty')
@@ -289,6 +373,20 @@ class Handler(BaseHTTPRequestHandler):
         except RuntimeError as exc:self.reply(409,{'error':str(exc)})
         except Exception:self.reply(500,{'error':'Local save failed; export a backup'})
 
+    def upload_pdf(self):
+        """Raw PDF body (Content-Type application/pdf); file name in X-File-Name (URL-encoded)."""
+        try:
+            size=int(self.headers.get('Content-Length','0'))
+            if size<=0:raise ValueError('PDF文件为空。')
+            if size>MAX_PDF_BYTES:
+                self.close_connection=True
+                raise ValueError('PDF超过 '+str(MAX_PDF_BYTES//1_000_000)+' MB，请拆分后再拖入。')
+            raw=self.rfile.read(size)
+            return self.reply(200,self.server.store.import_pdf(raw,unquote(self.headers.get('X-File-Name',''))))
+        except (ValueError,KeyError,TypeError) as exc:self.reply(400,{'error':str(exc)})
+        except RuntimeError as exc:self.reply(409,{'error':str(exc)})
+        except Exception as exc:self.reply(500,{'error':'PDF转换失败：'+str(exc)[:200]})
+
 def make_server(store,port=8765):
     server=ThreadingHTTPServer(('127.0.0.1',port),Handler)
     server.address='127.0.0.1:'+str(server.server_port)
@@ -307,6 +405,12 @@ def main():
     parser.add_argument('--auto-extract',action='store_true',help='Explicitly enable optional Codex background extraction; off by default')
     parser.add_argument('--profile',nargs='+',help='Print active scoped preferences and exit')
     args=parser.parse_args()
+    if sys.stdout is None or sys.stderr is None:
+        # Started with pythonw (desktop icon, no console window): keep messages in a log file.
+        args.data_dir.mkdir(parents=True,exist_ok=True)
+        log=open(args.data_dir/'server.log','a',encoding='utf-8',buffering=1)
+        log.write('\n--- '+time.strftime('%Y-%m-%d %H:%M:%S')+' ---\n')
+        sys.stdout=sys.stdout or log;sys.stderr=sys.stderr or log
     config=args.data_dir/'config.json'
     saved=json.loads(config.read_text(encoding='utf-8')) if config.exists() else {}
     vault=args.vault or saved.get('vault')

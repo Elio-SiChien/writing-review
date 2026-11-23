@@ -4,11 +4,14 @@ build-backend = "setuptools.build_meta"
 
 [project]
 name = "writing-review"
-version = "0.2.0.2"
+version = "0.5.0"
 description = "Local-first manuscript annotation with auditable Obsidian writing memory"
 requires-python = ">=3.10"
 license = {text = "MIT"}
 dependencies = []
+
+[project.optional-dependencies]
+pdf = ["PyMuPDF>=1.23"]
 
 [project.scripts]
 writing-review = "writing_review.server:main"

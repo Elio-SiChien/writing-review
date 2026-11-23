@@ -46,7 +46,8 @@ class BrowserTests(unittest.TestCase):
         p.wait_for_function("()=>document.querySelector('#scope').value==='general'")
         self.assertEqual(self.data()['scope'],'general')
         self.comment();first=self.data()['comments'][0];rid=self.data()['id']
-        exported=json.loads((self.store.review_dir/rid/'latest.json').read_text(encoding='utf-8'))
+        folder=Path(self.store.get(rid)['storage']['directory'])
+        exported=json.loads((folder/'CURRENT.json').read_text(encoding='utf-8'))['review']
         self.assertEqual(exported['comments'][0]['text'],'观点先行。')
         self.comment('说明为什么需要提前准备。',17)
         newest=self.data()['comments'][-1]
@@ -100,6 +101,20 @@ class BrowserTests(unittest.TestCase):
         file=self.folder/'recovery.json';item.value.save_as(file)
         self.assertEqual(json.loads(file.read_text(encoding='utf-8'))['paragraphs'][0]['current'],'Unsent text from the stale review')
         self.assertEqual(self.data()['id'],child['id'])
+    def test_pdf_dropped_on_page_becomes_document(self):
+        try:import fitz
+        except ImportError:self.skipTest('PyMuPDF not installed')
+        doc=fitz.open();page=doc.new_page()
+        page.insert_text((72,100),'A synthetic paragraph from a dropped PDF file.',fontsize=11)
+        raw=list(doc.tobytes());doc.close()
+        self.page.evaluate('''bytes=>{const dt=new DataTransfer();dt.items.add(new File([new Uint8Array(bytes)],'Dropped draft.pdf',{type:'application/pdf'}));
+            window.dispatchEvent(new DragEvent('dragenter',{dataTransfer:dt,cancelable:true}));
+            window.dispatchEvent(new DragEvent('drop',{dataTransfer:dt,cancelable:true}));}''',raw)
+        self.page.wait_for_function("()=>document.querySelector('#title').textContent==='Dropped draft'")
+        self.assertTrue(self.page.locator('#dropzone').is_hidden())
+        self.assertIn('p.1',self.page.locator('#p-P1 .paragraph-head').inner_text())
+        self.assertIn('Dropped draft',self.page.locator('#documents').inner_text())
+        self.assertFalse(self.errors)
     def test_file_write_failure_never_claims_obsidian_saved(self):
         with patch('writing_review.handoff.write_review',side_effect=PermissionError('Folder unavailable')):
             self.select();self.page.locator('#p-P1 .add-comment').click();self.page.locator('#comment-text').fill('Preserve this feedback.');self.page.locator('#save-comment').click()

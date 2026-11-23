@@ -13,3 +13,10 @@ playwright-report/
 
 # Optional workflow needs GitHub workflow scope; example is in docs/.
 .github/workflows/test.yml
+
+# Personal planning notes and cleanup reports (contain local paths and manuscript titles)
+docs/交接_*.md
+docs/优化方案_*.md
+docs/方案_*.md
+docs/清理清单_*.md
+.pytest_cache/
